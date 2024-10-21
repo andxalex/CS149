@@ -8,6 +8,10 @@ endif
 
 CXXFLAGS=-I. -I../common -I../tests -Iobjs/ -O3 -std=c++11 -Wall
 
+ifdef DEBUG
+    CXXFLAGS += -g
+endif
+
 APP_NAME=runtasks
 OBJDIR=objs
 COMMONDIR=../common

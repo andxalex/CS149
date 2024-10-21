@@ -2,6 +2,13 @@
 #define _TASKSYS_H
 
 #include "itasksys.h"
+#include <thread>
+#include <functional>
+#include <queue>
+#include <mutex>
+#include <assert.h>
+#include <condition_variable>
+#include <atomic>
 
 /*
  * TaskSystemSerial: This class is the student's implementation of a
@@ -17,6 +24,8 @@ class TaskSystemSerial: public ITaskSystem {
         TaskID runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
                                 const std::vector<TaskID>& deps);
         void sync();
+
+
 };
 
 /*
@@ -34,6 +43,9 @@ class TaskSystemParallelSpawn: public ITaskSystem {
         TaskID runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
                                 const std::vector<TaskID>& deps);
         void sync();
+
+    private:
+        int num_threads;
 };
 
 /*
@@ -51,7 +63,27 @@ class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
         TaskID runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
                                 const std::vector<TaskID>& deps);
         void sync();
+
+    private:
+        int num_threads;
+        bool keep_running = true;                // thread stop conditional
+        bool queue_ready = false;
+        int num_total_tasks = 0;
+        IRunnable* runnable;
+        std::atomic<int> task_num{0};
+        std::vector<std::thread> t;              // thread pool
+        std::deque<std::function<void()>> deque; // queue 
+        std::mutex mutex;                        // create lock
+        std::mutex mutex2;
+        std::mutex mutex3;
+        std::condition_variable cv;
+        std::condition_variable queue_final;     // create condition variable
+        std::condition_variable finished;        // check if finished.
+        std::atomic<int> tasks_finished;           // threads that still haven't finished.
+
+
 };
+
 
 /*
  * TaskSystemParallelThreadPoolSleeping: This class is the student's
@@ -68,6 +100,24 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         TaskID runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
                                 const std::vector<TaskID>& deps);
         void sync();
+
+    private:
+        int num_threads;
+        bool keep_running = true;                // thread stop conditional
+        bool queue_ready = false;
+        int num_total_tasks = 0;
+        IRunnable* runnable;
+        std::atomic<int> task_num{0};
+        std::vector<std::thread> t;              // thread pool
+        std::deque<std::function<void()>> deque; // queue 
+        std::mutex mutex;                        // create lock
+        std::mutex mutex2;
+        std::mutex mutex3;
+        std::condition_variable cv;
+        std::condition_variable start;     // create condition variable
+        std::condition_variable finished;        // check if finished.
+        std::atomic<int> tasks_finished;           // threads that still haven't finished.
+
 };
 
 #endif
