@@ -244,7 +244,7 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
     TaskSystemParallelThreadPoolSleeping::start.notify_all();
 
     //Join everything
-    printf("Trying to join");
+    // printf("Trying to join");
     uint i=0;
     for (auto& thread : TaskSystemParallelThreadPoolSleeping::t){
         thread.join();
