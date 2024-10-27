@@ -46,6 +46,9 @@ class TaskSystemParallelSpawn: public ITaskSystem {
 
     private:
         int num_threads;
+        int task_num = 0;
+        std::mutex mutex;
+        // std::atomic<int> task_num{0};
 };
 
 /*
@@ -67,7 +70,7 @@ class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
     private:
         int num_threads;
         bool keep_running = true;                // thread stop conditional
-        bool queue_ready = false;
+        bool finished = false;
         std::atomic<int> num_total_tasks{0};
         IRunnable* runnable;
         std::atomic<int> task_num{0};
@@ -78,7 +81,7 @@ class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
         std::mutex mutex3;
         std::condition_variable cv;
         std::condition_variable queue_final;     // create condition variable
-        std::condition_variable finished;        // check if finished.
+        // std::condition_variable finished;        // check if finished.
         std::atomic<int> tasks_finished{0};           // threads that still haven't finished.
 
 
