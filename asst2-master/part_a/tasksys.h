@@ -46,9 +46,8 @@ class TaskSystemParallelSpawn: public ITaskSystem {
 
     private:
         int num_threads;
-        int task_num = 0;
         std::mutex mutex;
-        // std::atomic<int> task_num{0};
+        std::atomic<int> task_num{0};
 };
 
 /*
