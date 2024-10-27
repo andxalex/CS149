@@ -84,7 +84,9 @@ void TaskSystemParallelSpawn::run(IRunnable* runnable, int num_total_tasks) {
 
     auto thread_func = [&](int thread_id, int tasks_per_thread, int num_total_tasks){
         for(;;){
-            int id = TaskSystemParallelSpawn::task_num.fetch_add(1);
+            std::unique_lock<std::mutex> lock(mutex);
+            int id = task_num ++;
+            lock.unlock();
             
             // If id is valid run, else return
             if (id < num_total_tasks){
@@ -246,7 +248,7 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
             if (id >= TaskSystemParallelThreadPoolSleeping::num_total_tasks){
 
                 // if id is invalid, sleep
-                std::unique_lock<std::mutex> lock(TaskSystemParallelThreadPoolSleeping::mutex);
+                std::unique_lock<std::mutex> lock(mutex);
                 start.wait(lock);
 
                 continue;
