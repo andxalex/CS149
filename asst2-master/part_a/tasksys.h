@@ -70,9 +70,10 @@ class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
         int num_threads;
         bool keep_running = true;                // thread stop conditional
         bool finished = false;
-        std::atomic<int> num_total_tasks{0};
+        int num_total_tasks = 0;
         IRunnable* runnable;
-        std::atomic<int> task_num{0};
+        int task_num = 0;
+        // std::atomic<int> task_num{0};
         std::vector<std::thread> t;              // thread pool
         std::deque<std::function<void()>> deque; // queue 
         std::mutex mutex;                        // create lock

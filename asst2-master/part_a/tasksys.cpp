@@ -153,7 +153,9 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
                 break;
 
             // Get id of task to start working on
-            int id = TaskSystemParallelThreadPoolSpinning::task_num.fetch_add(1);
+            std::unique_lock<std::mutex> lock(mutex);
+            int id = task_num ++;
+            lock.unlock();
 
             // skip if increment is greater than available tasks.
             if (id >= TaskSystemParallelThreadPoolSpinning::num_total_tasks) continue; 
@@ -162,11 +164,8 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
             TaskSystemParallelThreadPoolSpinning::runnable->runTask(id, num_total_tasks);
 
             // Increment finished tasks counter
-            if (++TaskSystemParallelThreadPoolSpinning::tasks_finished == num_total_tasks){
-                std::unique_lock<std::mutex> lock(mutex);
-                finished = true;
-                lock.unlock();
-            }            
+            ++TaskSystemParallelThreadPoolSpinning::tasks_finished;
+            
         }
     };  
     
@@ -192,18 +191,16 @@ TaskSystemParallelThreadPoolSpinning::~TaskSystemParallelThreadPoolSpinning() {
 
 void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_total_tasks) {
 
+    
+    std::unique_lock<std::mutex> lock(mutex);
     TaskSystemParallelThreadPoolSpinning::runnable = runnable;
-    TaskSystemParallelThreadPoolSpinning::finished = false;
     TaskSystemParallelThreadPoolSpinning::num_total_tasks = num_total_tasks;
     TaskSystemParallelThreadPoolSpinning::tasks_finished = 0;
     TaskSystemParallelThreadPoolSpinning::task_num = 0;
+    lock.unlock();
 
 
-    for(;;){
-        std::unique_lock<std::mutex> lock(mutex);
-        if (finished == true) break;
-        lock.unlock();
-    }
+    while(tasks_finished<num_total_tasks) std::this_thread::yield();
 }
 
 TaskID TaskSystemParallelThreadPoolSpinning::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
