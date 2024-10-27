@@ -139,9 +139,12 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
     // Resize thread array based on thread num
     TaskSystemParallelThreadPoolSpinning::t.resize(num_threads);
 
+    // Init
+    TaskSystemParallelThreadPoolSpinning::task_num = 0;
+    TaskSystemParallelThreadPoolSpinning::tasks_finished = 0;
+
     // Define worker lambda
     auto thread_func = [&](int threadId){
-        int i = 0;
         for (;;){
 
             // Destructor condition
@@ -149,26 +152,21 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
                 break;
 
             // Get id of task to start working on
-            int id = TaskSystemParallelThreadPoolSpinning::task_num.fetch_add(1);
+            uint id = TaskSystemParallelThreadPoolSpinning::task_num.fetch_add(1);
 
             // skip if increment is greater than available tasks.
             if (id >= TaskSystemParallelThreadPoolSpinning::num_total_tasks) continue; 
+
             // Execute task
             TaskSystemParallelThreadPoolSpinning::runnable->runTask(id, num_total_tasks);
 
-            {
-                std::lock_guard<std::mutex> lock(mutex);
-                if (++ TaskSystemParallelThreadPoolSpinning::tasks_finished == num_total_tasks){
-                    TaskSystemParallelThreadPoolSpinning::cv.notify_all();
-                }
-            }
-
-
+            // Increment finished tasks counter
+            TaskSystemParallelThreadPoolSpinning::tasks_finished.fetch_add(1);
         }
     };  
     
     // launch threads during construction using above lambda
-    int i =0;
+    uint i = 0;
     for (auto& thread : TaskSystemParallelThreadPoolSpinning::t){
         thread = std::thread(thread_func,i);
         i++;
@@ -190,13 +188,17 @@ TaskSystemParallelThreadPoolSpinning::~TaskSystemParallelThreadPoolSpinning() {
 void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_total_tasks) {
 
     TaskSystemParallelThreadPoolSpinning::runnable = runnable;
-
     TaskSystemParallelThreadPoolSpinning::num_total_tasks = num_total_tasks;
-    TaskSystemParallelThreadPoolSpinning::task_num = 0;
     TaskSystemParallelThreadPoolSpinning::tasks_finished = 0;
+    TaskSystemParallelThreadPoolSpinning::task_num = 0;
 
-    std::unique_lock<std::mutex> lock(mutex);
-    cv.wait(lock, [&](){ return tasks_finished.load() >= num_total_tasks; });
+
+
+    for(;;){
+        int val = TaskSystemParallelThreadPoolSpinning::tasks_finished.load();
+        if (val >=num_total_tasks)
+            break;
+    }
 }
 
 TaskID TaskSystemParallelThreadPoolSpinning::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
@@ -230,14 +232,13 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
 
     // Define worker lambda
     auto thread_func = [&](int threadId){
-        int i = 0;
         for (;;){
             // Destructor condition
             if (TaskSystemParallelThreadPoolSleeping::keep_running == false)
                 break;
 
             // Get id of task to start working on
-            int id = TaskSystemParallelThreadPoolSleeping::task_num.fetch_add(1);
+            uint id = TaskSystemParallelThreadPoolSleeping::task_num.fetch_add(1);
 
             // if id is greater than available tasks, go to bed.
             if (id >= TaskSystemParallelThreadPoolSleeping::num_total_tasks){
@@ -252,20 +253,17 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
             // Execute task
             TaskSystemParallelThreadPoolSleeping::runnable->runTask(id, num_total_tasks);
 
-            // printf("Thread %d finished task %d \n", threadId, id);
+            // increment tasks finished and check for completion before notifying.
             {
                 std::lock_guard<std::mutex> lock(mutex);
-                if (++ TaskSystemParallelThreadPoolSleeping::tasks_finished == num_total_tasks){
+                if (++ TaskSystemParallelThreadPoolSleeping::tasks_finished == num_total_tasks)
                     TaskSystemParallelThreadPoolSleeping::cv.notify_all();
-
-                    // printf("Popped by thread %d\n", threadId);
-                }
             }
         }
     };  
     
     // launch threads during construction using above lambda
-    int i =0;
+    uint i = 0;
     for (auto& thread : TaskSystemParallelThreadPoolSleeping::t){
         thread = std::thread(thread_func,i);
         i++;
@@ -289,11 +287,10 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
 void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_total_tasks) {
 
 
-    // Save runnable pointer
     TaskSystemParallelThreadPoolSleeping::runnable = runnable;
     TaskSystemParallelThreadPoolSleeping::num_total_tasks = num_total_tasks;
-    TaskSystemParallelThreadPoolSleeping::task_num = 0;
     TaskSystemParallelThreadPoolSleeping::tasks_finished = 0;
+    TaskSystemParallelThreadPoolSleeping::task_num = 0;
 
     // notify threads to start
     // printf("!!Waking up now!!\n");
@@ -301,8 +298,11 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_tota
     
 
     // wait to continue
-    std::unique_lock<std::mutex> lock(mutex2);
-    cv.wait(lock, [&](){ return tasks_finished.load() >= num_total_tasks; });
+    uint unum = num_total_tasks;
+    {
+        std::unique_lock<std::mutex> lk(mutex);
+        cv.wait(lk, [&](){ return tasks_finished.load() >= unum; });
+    }
 }
 
 TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,

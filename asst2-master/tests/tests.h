@@ -548,14 +548,15 @@ TestResults simpleTest(ITaskSystem* t, bool do_async) {
         int expected = value;
         if (array[i] != expected) {
             results.passed = false;
+            printf("ERROR BELOW \n");
             printf("%d: %d expected=%d\n", i, array[i], expected);
             break;
         }
     }
+
     results.time = end_time - start_time;
 
     delete [] array;
-
     return results;
 }
 
@@ -651,7 +652,7 @@ TestResults pingPongTest(ITaskSystem* t, bool equal_work, bool do_async,
         int expected = value;
         if (buffer[i] != expected) {
             results.passed = false;
-            printf("%d: %d expected=%d\n", i, buffer[i], expected);
+            printf("%d of %d: %d expected=%d\n", i,num_elements, buffer[i], expected);
             break;
         }
     }

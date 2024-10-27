@@ -2,6 +2,16 @@
 #define _TASKSYS_H
 
 #include "itasksys.h"
+#include <algorithm>
+#include <thread>
+#include <functional>
+#include <queue>
+#include <mutex>
+#include <assert.h>
+#include <condition_variable>
+#include <atomic>
+#include <unordered_map>
+#include <unordered_set>
 
 /*
  * TaskSystemSerial: This class is the student's implementation of a
@@ -53,6 +63,22 @@ class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
         void sync();
 };
 
+
+/*
+ * Task structure
+ */
+struct bulkTask {
+    TaskID taskId; // Unique task identifier
+    IRunnable* runnable; // Runnable pointer
+    uint num_total_tasks; // number of total tasks in bulk launch
+    uint num_remaining_tasks;
+    uint task_index = 0;
+    std::unordered_set<TaskID> dependencies; //Sets for dependencies/ dependents
+    std::unordered_set<TaskID> dependents;
+    bool finished = false;
+};
+
+
 /*
  * TaskSystemParallelThreadPoolSleeping: This class is the student's
  * optimized implementation of a parallel task execution engine that uses
@@ -68,6 +94,40 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         TaskID runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
                                 const std::vector<TaskID>& deps);
         void sync();
-};
+    
+    private:
+        TaskID task_id = 0;
+        int num_threads;
+        bool keep_running = true;                // thread stop conditional
+        bool is_first_run = true;       
+        std::atomic<uint> num_total_tasks{0};
+        IRunnable* runnable;
+
+
+        std::unordered_map<TaskID, bulkTask> all_tasks;
+        std::unordered_map<TaskID, bulkTask*> wait_queue;
+        std::deque<bulkTask*> ready_queue;
+
+        // std::vector<TaskID> ready_queue;
+        // std::vector<TaskID> dep_queue;
+        // std::unordered_set<TaskID> finished;
+        
+        std::unordered_map<TaskID, std::unordered_set<TaskID>> dependencies;
+        std::unordered_map<TaskID, std::unordered_set<TaskID>> dependents;
+        std::unordered_map<TaskID, int> runs_dep;
+        std::unordered_map<TaskID, int> runs;
+        std::unordered_map<TaskID, IRunnable*> runnables;
+        std::vector<int> t_exited;
+        std::atomic<uint> task_num{0};
+        std::vector<std::thread> t;              // thread pool
+        std::mutex mutex;                        // create lock
+        std::mutex mutex2;
+        std::mutex mutex3;
+        std::mutex mutex4;
+        std::condition_variable cv;
+        std::condition_variable start;     // create condition variable
+        std::atomic<uint> tasks_finished{0};           // threads that still haven't finished.
+
+};      
 
 #endif

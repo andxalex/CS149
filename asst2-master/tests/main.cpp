@@ -168,14 +168,15 @@ int main(int argc, char** argv)
 
                 // Create a new task system
                 ITaskSystem *t = selectTaskSystemRefImpl(num_threads, (TaskSystemType) i);
-
+                
                 // Run test
+                // printf("Running\n");
                 TestResults result = test[test_id](t);
 
                 // Check that the test result was correct
                 if (!result.passed) {
-                    printf("ERROR: Results did not pass correctness check! (iter=%d, ref_impl=%s)\n",
-                        j, t->name());
+                    printf("ERROR: Results did not pass correctness check! (iter=%d of %d, ref_impl=%s)\n",
+                        j, num_timing_iterations,t->name());
                     exit(1);
                 }
 
