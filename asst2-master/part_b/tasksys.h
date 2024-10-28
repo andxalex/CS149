@@ -99,14 +99,14 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         TaskID task_id = 0;
         int num_threads;
         bool keep_running = true;                // thread stop conditional
-        bool is_first_run = true;       
+        bool finished = false;                   // thread sync conditional       
         std::atomic<uint> num_total_tasks{0};
         IRunnable* runnable;
 
 
         std::unordered_map<TaskID, bulkTask> all_tasks;
         std::unordered_map<TaskID, bulkTask*> wait_queue;
-        std::deque<bulkTask*> ready_queue;
+        std::unordered_map<TaskID, bulkTask*> ready_queue;
 
         // std::vector<TaskID> ready_queue;
         // std::vector<TaskID> dep_queue;
