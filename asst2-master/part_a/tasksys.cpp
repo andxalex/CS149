@@ -157,11 +157,10 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
             // Get id of task to start working on
             std::unique_lock<std::mutex> lock(mutex);
             int id = task_num ++;
-            lock.unlock();
 
             // skip if increment is greater than available tasks.
             if (id >= TaskSystemParallelThreadPoolSpinning::num_total_tasks) continue; 
-
+            lock.unlock();
             // Execute task
             TaskSystemParallelThreadPoolSpinning::runnable->runTask(id, num_total_tasks);
 
