@@ -68,16 +68,15 @@ class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
  * Task structure
  */
 struct bulkTask {
-    TaskID taskId; // Unique task identifier
-    IRunnable* runnable; // Runnable pointer
-    int num_total_tasks; // number of total tasks in bulk launch
-    std::atomic<int> num_remaining_tasks;
-    int task_index = 0;
-    int remaining_deps = 0;
-    std::unordered_set<TaskID> dependencies;
-    std::unordered_set<TaskID> dependents;
-    bool finished = false;
-    std::mutex mutex;
+    TaskID taskId;                          // Unique task identifier
+    IRunnable* runnable;                    // Runnable pointer
+    int num_total_tasks;                    // number of total tasks in bulk launch
+    std::atomic<int> num_remaining_tasks;   // number of remaining tasks in bulk launch
+    int task_index = 0;                     // subtask index
+    std::unordered_set<TaskID> dependencies;// dependencies
+    std::unordered_set<TaskID> dependents;  // dependents
+    bool finished = false;                  // bulk finish flag
+    std::mutex mutex;                       // bulk mutex
 };
 
 
@@ -98,37 +97,20 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         void sync();
     
     private:
-        TaskID task_id = 0;
-        int num_threads;
-        bool keep_running = true;                // thread stop conditional
-        bool finished_flag = false;                   // thread sync conditional       
-        std::atomic<int> num_total_tasks{0};
-        IRunnable* runnable;
+        TaskID task_id = 0;                                 // internal task id
+        int num_threads;                                    // number of threads
+        bool keep_running = true;                           // thread stop conditional
+        bool finished_flag = false;                         // thread sync conditional       
+        std::unordered_map<TaskID, bulkTask*> all_tasks;    // stores all tasks always
+        std::unordered_map<TaskID, bulkTask*> ready_queue;  // execution queue
+        std::vector<std::thread> t;                         // thread pool
+        std::mutex ready_queue_mutex;                       // mutex for ready_queue map
+        std::mutex all_tasks_mutex;                         // mutex for all_gasks map
+        std::mutex keep_running_mutex;                      // mutex for destructor
+        std::mutex cv_mutex;                                // mutex for cv
+        std::condition_variable cv;                         // sync condition variable
+        std::condition_variable start;                      // thread wake up cv
 
-
-        std::unordered_map<TaskID, bulkTask*> all_tasks;
-        std::unordered_map<TaskID, bulkTask*> ready_queue;
-
-        // std::vector<TaskID> ready_queue;
-        // std::vector<TaskID> dep_queue;
-        // std::unordered_set<TaskID> finished;
-        
-        std::unordered_map<TaskID, std::unordered_set<TaskID>> dependencies;
-        std::unordered_map<TaskID, std::unordered_set<TaskID>> dependents;
-        std::unordered_map<TaskID, int> runs_dep;
-        std::unordered_map<TaskID, int> runs;
-        std::unordered_map<TaskID, IRunnable*> runnables;
-        std::vector<int> t_exited;
-        std::atomic<int> task_num{0};
-        std::vector<std::thread> t;              // thread pool
-        std::mutex ready_queue_mutex;                        // create lock
-        std::mutex all_tasks_mutex;
-        std::mutex keep_running_mutex;
-        std::mutex cv_mutex;
-        std::mutex mutex4;
-        std::condition_variable cv;
-        std::condition_variable start;     // create condition variable
-        std::atomic<uint> tasks_finished{0};           // threads that still haven't finished.
 
 };      
 
