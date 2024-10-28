@@ -242,27 +242,28 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
                 break;
 
             // Get id of task to start working on
-            int id = TaskSystemParallelThreadPoolSleeping::task_num.fetch_add(1);
+            std::unique_lock<std::mutex> lock(mutex);
+            int id = TaskSystemParallelThreadPoolSleeping::task_num++;
 
             // if id is greater than available tasks, go to bed.
             if (id >= TaskSystemParallelThreadPoolSleeping::num_total_tasks){
 
                 // if id is invalid, sleep
-                std::unique_lock<std::mutex> lock(mutex);
                 start.wait(lock);
-
                 continue;
             } 
+            lock.unlock();
 
             // Execute task
             TaskSystemParallelThreadPoolSleeping::runnable->runTask(id, num_total_tasks);
 
             // increment tasks finished and check for completion before notifying.
-            {
-                std::lock_guard<std::mutex> lock(mutex);
-                if (++ TaskSystemParallelThreadPoolSleeping::tasks_finished == num_total_tasks)
-                    TaskSystemParallelThreadPoolSleeping::cv.notify_all();
+            lock.lock();
+            if (++ TaskSystemParallelThreadPoolSleeping::tasks_finished == num_total_tasks){
+                finished_flag = true;
+                TaskSystemParallelThreadPoolSleeping::cv.notify_all();
             }
+            lock.unlock();
         }
     };  
     
@@ -291,22 +292,24 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
 void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_total_tasks) {
 
 
+    std::unique_lock<std::mutex> lock(mutex);
     TaskSystemParallelThreadPoolSleeping::runnable = runnable;
     TaskSystemParallelThreadPoolSleeping::num_total_tasks = num_total_tasks;
     TaskSystemParallelThreadPoolSleeping::tasks_finished = 0;
     TaskSystemParallelThreadPoolSleeping::task_num = 0;
-
+    lock.unlock();
     // notify threads to start
     // printf("!!Waking up now!!\n");
     TaskSystemParallelThreadPoolSleeping::start.notify_all();
     
 
     // wait to continue
-    int unum = num_total_tasks;
-    {
-        std::unique_lock<std::mutex> lk(mutex);
-        cv.wait(lk, [&](){ return tasks_finished.load() >= unum; });
+
+    std::unique_lock<std::mutex> lk(mutex);
+    while(finished_flag == false){
+        cv.wait(lk);
     }
+    finished_flag = false;
 }
 
 TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,

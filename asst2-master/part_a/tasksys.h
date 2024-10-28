@@ -111,9 +111,11 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         bool keep_running = true;                // thread stop conditional
         bool queue_ready = false;
         int num_total_tasks = 0;
+        bool finished_flag = false;
+        int tasks_finished = 0;
         IRunnable* runnable;
-        std::atomic<int> task_num{0};
-        // int task_num = 0;
+        // std::atomic<int> task_num{0};
+        int task_num = 0;
         std::vector<std::thread> t;              // thread pool
         std::deque<std::function<void()>> deque; // queue 
         std::mutex mutex;                        // create lock
@@ -121,7 +123,7 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         std::condition_variable cv;
         std::condition_variable start;     // create condition variable
         std::condition_variable finished;        // check if finished.
-        std::atomic<int> tasks_finished{0};           // threads that still haven't finished.
+        // std::atomic<int> tasks_finished{0};           // threads that still haven't finished.
 
 };
 
