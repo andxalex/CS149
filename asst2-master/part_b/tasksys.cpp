@@ -141,10 +141,9 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
             if (!keep_running) break;
 
             // If ready_queue is empty, go to bed
-            std::unique_lock<std::mutex> lock(mutex);
+            std::unique_lock<std::mutex> lock(ready_queue_mutex);
             while(ready_queue.empty()&&keep_running){
 
-                // printf("Thread  %d going to bed \n", threadId);
                 start.wait(lock);
 
                 // Need to break if thread is woken up but queue is still empty
@@ -154,80 +153,86 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
             // Lock before fetching task
             bulkTask* task_ptr = nullptr;
 
-            uint id;
+            int id;
             // Iterate over queue to find bulk task
-            // printf("Ready queue size: %d \n", ready_queue.size());
             for(auto& bulk_task : ready_queue){
                 task_ptr = bulk_task.second;
-                // if (taskId == 1)
-                // printf("Looking at  bulk id %d = %d, internal index = %d of %d, ready queue size = %d\n",taskId,task_ptr->taskId,task_ptr->task_index,task_ptr->num_total_tasks, ready_queue.size() );
+                
                 if (task_ptr->task_index < (task_ptr->num_total_tasks)){
+
                     // Store id and increment index
                     id = task_ptr->task_index ++;
                     
                     // unlock lock
                     lock.unlock();
-                    // printf("Thread %d took id %d \n", threadId, id);
-                    // Use goto
+
+                    // rare goto usage
                     goto execute;
                 }
             }
-            // printf("Spinning?? \n");
-            continue;
+
             lock.unlock();
+            continue;
+
 
             execute:
             // Execute task
             task_ptr->runnable->runTask(id, task_ptr->num_total_tasks);
-            // printf("Executed task bulk %d id %d of %d\n",task_ptr->taskId, id,task_ptr->num_total_tasks);
 
             // After execution, update queues if this is the last id
-            lock.lock();
-            task_ptr->num_remaining_tasks --;
-            if (task_ptr->num_remaining_tasks == 0) {
-                // printf("Entered here\n");
+            int remaining = task_ptr->num_remaining_tasks.fetch_sub(1);
+            if (remaining == 1) {
+
                 // Set bulk task to finished
-                task_ptr->finished = true;
-                // printf("bulk %d Set task finished ptr: %d \n", task_ptr->taskId,task_ptr->finished);
+                {
+                    std::lock_guard<std::mutex> lock(task_ptr->mutex);
+                    task_ptr->finished = true;
+                }
+
                 // Update dependents
-                // printf("Dependent size: %ld \n", task_ptr->dependents.size());
-                for (auto& dep_id : task_ptr->dependents){
-                    // printf("Bulk %d dependent: %d \n", task_ptr->taskId,dep_id);
-                    //Remove dependencies
-                    all_tasks[dep_id]->dependencies.erase(task_ptr->taskId);
-                    // printf("Thread %d removed dependency of %d to %d \n",threadId,dep_id,task_ptr->taskId);
+                {
+                    std::lock_guard<std::mutex> lock(all_tasks_mutex);
 
-                    // If no more dependencies
-                    if (all_tasks[dep_id]->dependencies.size() == 0){
-                        // push to ready queue
+                    for (auto& dep_id : task_ptr->dependents){
+                        bulkTask* dep_task = all_tasks[dep_id];
 
-                        // printf("Thread %d pushed something to ready queue \n", threadId);
-                        // ready_queue.emplace(dep_id, &all_tasks[dep_id]);
-                        ready_queue.emplace(dep_id, all_tasks[dep_id]);
-                        // printf("Pushed block task id %d on ready queue, this has an id of %d\n",dep_id, all_tasks[dep_id].taskId);
+                        //Remove dependencies
+                        {   
+                            std::lock_guard<std::mutex> dep_lock(dep_task->mutex);
+                            dep_task->dependencies.erase(task_ptr->taskId);
 
+                            // If no more dependencies push to ready queue
+                            if (dep_task->dependencies.empty()){
+                                {
+                                    std::lock_guard<std::mutex> rq_lock(ready_queue_mutex);
+                                    ready_queue.emplace(dep_id, dep_task);
+                                }
+                                start.notify_all();
+                            }
+                        }
                     }
-                }   
+                
 
-                // use mystery variable to delete queue element
-                // printf("BEFORE: Deleting bulk task id %d, ready_queue size = %d \n", task_ptr->taskId, ready_queue.size());
-                ready_queue.erase(task_ptr->taskId);
-                // printf("AFTER: Deleting bulk task id %d, ready_queue size = %d \n", task_ptr->taskId, ready_queue.size());
+                    // Update ready_queue and notify sync()
+                    {
+                        std::lock_guard<std::mutex> lock(ready_queue_mutex);
+                        ready_queue.erase(task_ptr->taskId);
 
-                // printf("Here, task id %d, %d of %d, ready_queue = %d empty? %d, wait_queue = %d empty? %d \n",task_ptr->taskId, id, task_ptr->num_total_tasks, ready_queue.size(), ready_queue.empty(), wait_queue.size(), wait_queue.empty());
-                if(ready_queue.empty()){
-                    finished_flag = true;
-                    // printf("Notified");
-                    cv.notify_all();  
+                        if(ready_queue.empty()){
+                            {
+                            std::lock_guard<std::mutex> cv_lock(cv_mutex);
+                            finished_flag = true;
+                            }
+                            cv.notify_all();  
+                        }
+                    }
                 }
             }
-            //If queues are empty, notify
-            lock.unlock();
         }
     };  
     
     // launch threads during construction using above lambda
-    uint i = 0;
+    int i = 0;
     for (auto& thread : TaskSystemParallelThreadPoolSleeping::t){
         thread = std::thread(thread_func,i);
         i++;
@@ -236,7 +241,7 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
 
 TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
 
-    std::unique_lock<std::mutex> lock(mutex);
+    std::unique_lock<std::mutex> lock(keep_running_mutex);
     // Stop running
     TaskSystemParallelThreadPoolSleeping::keep_running = false;
 
@@ -244,9 +249,9 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
     TaskSystemParallelThreadPoolSleeping::start.notify_all();
 
     lock.unlock();
+
     //Join everything
-    // printf("Trying to join");
-    uint i=0;
+    int i=0;
     for (auto& thread : TaskSystemParallelThreadPoolSleeping::t){
         thread.join();
         i++;
@@ -275,56 +280,51 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
     bulk_task->num_total_tasks = num_total_tasks;
     bulk_task->num_remaining_tasks = num_total_tasks;
 
-    // Lock while populating queues
-    std::unique_lock<std::mutex> lock(mutex);
 
     // Set flag low
     finished_flag = false;
 
-    // Populate dependencies if they exist
-    // if (ready_queue.size()== 0){
+    for (auto& dep : deps) {
 
-    // }
-    if (deps.size()){
-
-        // Update dependants
-        for (auto& dep : deps){
-
-            // Only register dependencies that are active
-            if (all_tasks[dep]->finished == false){
-                bulk_task->remaining_deps ++;
+        // Fetch dependencies
+        bulkTask* dep_task;
+        {
+            std::lock_guard<std::mutex> lock(all_tasks_mutex);
+            dep_task = all_tasks[dep];
+        }
+        
+        // Update dependencies/dependents
+        {
+            std::lock_guard<std::mutex> lock(dep_task->mutex);
+            if (!dep_task->finished) {
                 bulk_task->dependencies.insert(dep);
-                all_tasks[dep]->dependents.insert(task_id);
+                dep_task->dependents.insert(task_id);
             }
         }
     }
         
-
-    // All tasks are pushed into the all_task map for easy handling
-    all_tasks.emplace(task_id, bulk_task);
-
-    // If no dependencies, then push to ready queue
-    if (bulk_task->remaining_deps == 0){
-        ready_queue.emplace(task_id, bulk_task);
+    {
+        // All tasks are pushed into the all_task map for easy handling
+        std::lock_guard<std::mutex> lock(all_tasks_mutex);
+        all_tasks.emplace(task_id, bulk_task);
     }
 
-    // Unlock 
-    lock.unlock();
 
-    // Notify cause stuff could be sleeping
-    start.notify_all();
+    if (bulk_task->dependencies.empty()) {
+        // No dependencies, add to ready_queue
+        std::lock_guard<std::mutex> lock(ready_queue_mutex);
+        ready_queue.emplace(task_id, bulk_task);
+        start.notify_all();
+    }
 
     return task_id ++;
 }
 
 void TaskSystemParallelThreadPoolSleeping::sync() {
 
-    std::unique_lock<std::mutex> lock(mutex);
-
+    std::unique_lock<std::mutex> lock(cv_mutex);
     while(finished_flag == false){
-        // printf("Called sync, going tobed, ready_queue status = %d, wait_queue status = %d\n", ready_queue.empty(), wait_queue.empty());
         cv.wait(lock);
     }
-    // printf("synced \n");
     return;
 }

@@ -71,12 +71,13 @@ struct bulkTask {
     TaskID taskId; // Unique task identifier
     IRunnable* runnable; // Runnable pointer
     int num_total_tasks; // number of total tasks in bulk launch
-    int num_remaining_tasks;
+    std::atomic<int> num_remaining_tasks;
     int task_index = 0;
     int remaining_deps = 0;
     std::unordered_set<TaskID> dependencies;
     std::unordered_set<TaskID> dependents;
     bool finished = false;
+    std::mutex mutex;
 };
 
 
@@ -120,9 +121,10 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         std::vector<int> t_exited;
         std::atomic<int> task_num{0};
         std::vector<std::thread> t;              // thread pool
-        std::mutex mutex;                        // create lock
-        std::mutex mutex2;
-        std::mutex mutex3;
+        std::mutex ready_queue_mutex;                        // create lock
+        std::mutex all_tasks_mutex;
+        std::mutex keep_running_mutex;
+        std::mutex cv_mutex;
         std::mutex mutex4;
         std::condition_variable cv;
         std::condition_variable start;     // create condition variable
