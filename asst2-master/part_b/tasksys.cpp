@@ -159,8 +159,11 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
 
             uint id;
             // Iterate over queue to find bulk task
-            for(auto& pair : ready_queue){
-                task_ptr = pair.second;
+            // printf("Ready queue size: %d \n", ready_queue.size());
+            for(auto& bulk_task : ready_queue){
+                task_ptr = bulk_task.second;
+                // if (taskId == 1)
+                // printf("Looking at  bulk id %d = %d, internal index = %d of %d, ready queue size = %d\n",taskId,task_ptr->taskId,task_ptr->task_index,task_ptr->num_total_tasks, ready_queue.size() );
                 if (task_ptr->task_index < (task_ptr->num_total_tasks)){
                     // Store id and increment index
                     id = task_ptr->task_index ++;
@@ -172,6 +175,7 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
                     goto execute;
                 }
             }
+            // printf("Spinning?? \n");
             continue;
             lock.unlock();
 
@@ -184,6 +188,7 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
             lock.lock();
             task_ptr->num_remaining_tasks --;
             if (task_ptr->num_remaining_tasks == 0) {
+                // printf("Entered here\n");
                 // Set bulk task to finished
                 task_ptr->finished = true;
                 // printf("bulk %d Set task finished ptr: %d \n", task_ptr->taskId,task_ptr->finished);
@@ -200,33 +205,29 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
                         // push to ready queue
 
                         // printf("Thread %d pushed something to ready queue \n", threadId);
-                        ready_queue.emplace(dep_id, &all_tasks[dep_id]);
+                        // ready_queue.emplace(dep_id, &all_tasks[dep_id]);
+                        ready_queue[dep_id]=&all_tasks[dep_id];
+                        // printf("Pushed block task id %d on ready queue, this has an id of %d\n",dep_id, all_tasks[dep_id].taskId);
 
                         // delete from wait queue
                         wait_queue.erase(dep_id);
                     }
                 }   
-                // also iterate over loop and find potential  independent tasks that haven't been scheduled for whatever reason
-                // for (auto& [key, value]: wait_queue){
-                //     if (value->dependencies.size()==0){
-                //         ready_queue.push_back(value);
-                //         wait_queue.erase(key);
-                //     } //else printf("bulk id %d dep on = %d \n",key, *value->dependencies.begin());
-                // }
 
                 // use mystery variable to delete queue element
+                // printf("BEFORE: Deleting bulk task id %d, ready_queue size = %d \n", task_ptr->taskId, ready_queue.size());
                 ready_queue.erase(task_ptr->taskId);
-
-
-                if(ready_queue.empty() && wait_queue.empty()){
-                finished = true;
-                // printf("Notified");
-                cv.notify_all();  
-                }
+                // printf("AFTER: Deleting bulk task id %d, ready_queue size = %d \n", task_ptr->taskId, ready_queue.size());
 
                 // printf("Here, task id %d, %d of %d, ready_queue = %d empty? %d, wait_queue = %d empty? %d \n",task_ptr->taskId, id, task_ptr->num_total_tasks, ready_queue.size(), ready_queue.empty(), wait_queue.size(), wait_queue.empty());
-
+                if(ready_queue.empty() && wait_queue.empty()){
+                    finished = true;
+                    // printf("Notified");
+                    cv.notify_all();  
+                }
             }
+
+
             //If queues are empty, notify
 
             lock.unlock();
@@ -270,7 +271,7 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_tota
 
 TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
                                                     const std::vector<TaskID>& deps) {
-                                        
+           
     // Create and populate task structure
     bulkTask bulk_task;
     bulk_task.taskId = task_id;
@@ -281,12 +282,12 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
     // Lock while populating queues
     std::unique_lock<std::mutex> lock(mutex);
 
+    // printf("WTF 0??? >> %d, %d \n",task_id, bulk_task.taskId);
+
     // Set flag low
     finished = false;
 
-    // All tasks are pushed into the all_task map for easy handling
-    all_tasks.emplace(task_id, bulk_task);
-
+    // all_tasks[task_id] =  bulk_task;
     // Populate dependencies if they exist
     if (deps.size()){
 
@@ -295,24 +296,43 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
 
             // Only register dependencies that are active
             if (all_tasks[dep].finished == false){
-                all_tasks[task_id].dependencies.insert(dep);
+                bulk_task.remaining_deps ++;
+                bulk_task.dependencies.insert(dep);
                 all_tasks[dep].dependents.insert(task_id);
             }
         }
-        // If there are dependencies, push to wait queue
-        // else push to ready queue.
-        if (all_tasks[task_id].dependencies.size())
-            wait_queue.emplace(task_id, &all_tasks[task_id]);
-        else
-            ready_queue.emplace(task_id, &all_tasks[task_id]);
-    } else {
-        // If no dependencies just add to ready queue
-        ready_queue.emplace(task_id, &all_tasks[task_id]);
+
+    //     if (all_tasks[task_id].dependencies.size())
+    //         wait_queue[task_id] =&all_tasks[task_id]; //emplace(task_id, &all_tasks[task_id]);
+    //     else
+    //         ready_queue[task_id] =&all_tasks[task_id]; //.emplace(task_id, &all_tasks[task_id]);
+    // } else {
+    //     // If no dependencies just add to ready queue
+    //     ready_queue[task_id] =&all_tasks[task_id]; //.emplace(task_id, &all_tasks[task_id]);
+        
     }
-    
+        
+
+    // All tasks are pushed into the all_task map for easy handling
+
+    // printf("SANITY 1, ID = %d, RUNNABLE = %d, TOTAL_TASKS = %d \n", bulk_task.taskId, bulk_task.runnable, bulk_task.num_total_tasks);
+    // all_tasks.emplace(task_id, bulk_task);
+    all_tasks.emplace(task_id,bulk_task);
+    // printf("SANITY 2, ID = %d, RUNNABLE = %d, TOTAL_TASKS = %d \n", all_tasks[task_id].taskId, all_tasks[task_id].runnable, all_tasks[task_id].num_total_tasks);
+    // printf("WTF 2??? >> %d, %d \n",task_id, all_tasks[task_id].taskId);
+    // If no dependencies, then push to ready queue
+    if (bulk_task.remaining_deps == 0){
+        // printf("SANITY 2, ID = %d, RUNNABLE = %d, TOTAL_TASKS = %d \n", all_tasks[task_id].taskId, all_tasks[task_id].runnable, all_tasks[task_id].num_total_tasks);
+        // ready_queue.emplace(task_id, &all_tasks[task_id]);
+        ready_queue.emplace(task_id, &all_tasks[task_id]);
+        // printf("SANITY 3, ID = %d, RUNNABLE = %d, TOTAL_TASKS = %d \n", ready_queue[task_id]->taskId, ready_queue[task_id]->runnable, ready_queue[task_id]->num_total_tasks);
+    } else {
+        wait_queue.emplace(task_id, &all_tasks[task_id]);
+    }
+
     // Unlock 
     lock.unlock();
-
+    // printf("Pushed task id %d with actual id %d to ready queue \n", task_id, all_tasks[task_id].taskId);
     // printf("Pushed task id %d  with num_tasks %d into ready queue %ld , or wait queue %ld \n", task_id,num_total_tasks, ready_queue.size(), wait_queue.size());
     // printf("Task 0 statistics: dependencies %ld, dependents %ld\n", all_tasks[0].dependencies.size(), all_tasks[0].dependents.size());
     // printf("Task 1 statistics: dependencies %ld, dependents %ld\n", all_tasks[1].dependencies.size(), all_tasks[1].dependents.size());
@@ -326,6 +346,7 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
 void TaskSystemParallelThreadPoolSleeping::sync() {
 
     std::unique_lock<std::mutex> lock(mutex);
+
     while(finished == false){
         // printf("Called sync, going tobed, ready_queue status = %d, wait_queue status = %d\n", ready_queue.empty(), wait_queue.empty());
         cv.wait(lock);

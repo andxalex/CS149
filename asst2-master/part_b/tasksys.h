@@ -70,10 +70,11 @@ class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
 struct bulkTask {
     TaskID taskId; // Unique task identifier
     IRunnable* runnable; // Runnable pointer
-    uint num_total_tasks; // number of total tasks in bulk launch
-    uint num_remaining_tasks;
-    uint task_index = 0;
-    std::unordered_set<TaskID> dependencies; //Sets for dependencies/ dependents
+    int num_total_tasks; // number of total tasks in bulk launch
+    int num_remaining_tasks;
+    int task_index = 0;
+    int remaining_deps = 0;
+    std::unordered_set<TaskID> dependencies;
     std::unordered_set<TaskID> dependents;
     bool finished = false;
 };
@@ -100,7 +101,7 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         int num_threads;
         bool keep_running = true;                // thread stop conditional
         bool finished = false;                   // thread sync conditional       
-        std::atomic<uint> num_total_tasks{0};
+        std::atomic<int> num_total_tasks{0};
         IRunnable* runnable;
 
 
@@ -118,7 +119,7 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         std::unordered_map<TaskID, int> runs;
         std::unordered_map<TaskID, IRunnable*> runnables;
         std::vector<int> t_exited;
-        std::atomic<uint> task_num{0};
+        std::atomic<int> task_num{0};
         std::vector<std::thread> t;              // thread pool
         std::mutex mutex;                        // create lock
         std::mutex mutex2;
