@@ -45,10 +45,9 @@ class TaskSystemParallelSpawn: public ITaskSystem {
         void sync();
 
     private:
-        int num_threads;
-        std::mutex mutex;
-        int task_num = 0;
-        // std::atomic<int> task_num{0};
+        int num_threads;        // number of threads
+        std::mutex mutex;       // a single mutex
+        int task_num = 0;       // current task id
 
 };
 
@@ -69,26 +68,15 @@ class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
         void sync();
 
     private:
-        int num_threads;
-        bool keep_running = true;                // thread stop conditional
-        bool finished = false;
-        int num_total_tasks = 0;
-        IRunnable* runnable;
-        int task_num = 0;
-        // std::atomic<int> task_num{0};
-        std::vector<std::thread> t;              // thread pool
-        std::deque<std::function<void()>> deque; // queue 
-        std::mutex mutex;                        // create lock
-        std::mutex mutex2;
-        std::mutex mutex3;
-        std::condition_variable cv;
-        std::condition_variable queue_final;     // create condition variable
-        // std::condition_variable finished;        // check if finished.
-        std::atomic<int> tasks_finished{0};           // threads that still haven't finished.
-
-
+        int num_threads;                    // number of threads
+        bool keep_running = true;           // thread stop conditional
+        int num_total_tasks = 0;            // number  of total tasks
+        IRunnable* runnable;                // pointer to runnable
+        int task_num = 0;                   // number of current task
+        std::vector<std::thread> t;         // thread pool
+        std::mutex mutex;                   // create lock
+        std::atomic<int> tasks_finished{0}; // finished task tracker
 };
-
 
 /*
  * TaskSystemParallelThreadPoolSleeping: This class is the student's
@@ -107,24 +95,18 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         void sync();
 
     private:
-        int num_threads;
-        bool keep_running = true;                // thread stop conditional
-        bool queue_ready = false;
-        int num_total_tasks = 0;
-        bool finished_flag = false;
-        int tasks_finished = 0;
-        IRunnable* runnable;
-        // std::atomic<int> task_num{0};
-        int task_num = 0;
-        std::vector<std::thread> t;              // thread pool
-        std::deque<std::function<void()>> deque; // queue 
-        std::mutex mutex;                        // create lock
-        std::mutex mutex2;
-        std::condition_variable cv;
-        std::condition_variable start;     // create condition variable
-        std::condition_variable finished;        // check if finished.
-        // std::atomic<int> tasks_finished{0};           // threads that still haven't finished.
-
+        int num_threads;                        // number of threads
+        bool keep_running = true;               // thread stop conditional               
+        int num_total_tasks = 0;                // number of total tasks
+        bool finished_flag = false;             // finished flag
+        int tasks_finished = 0;                 // num of finished tasks
+        IRunnable* runnable;                    // runnable pointer
+        int task_num = 0;                       // current task id
+        std::vector<std::thread> t;             // thread pool
+        std::mutex mutex;                       // create lock
+        std::mutex mutex2;                      // and anotha one
+        std::condition_variable cv;             // stop cv
+        std::condition_variable start;          // wake up cv
 };
 
 #endif
