@@ -191,10 +191,19 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
 
                 // Update dependents
                 {
-                    std::lock_guard<std::mutex> lock(all_tasks_mutex);
+                    std::lock_guard<std::mutex> lock(task_ptr->mutex);
 
-                    for (auto& dep_id : task_ptr->dependents){
-                        bulkTask* dep_task = all_tasks[dep_id];
+                    auto dependents = task_ptr->dependents;
+
+                    for (auto& dep_id : dependents){
+                        bulkTask* dep_task = nullptr;
+
+                        //Access all_tasks
+                        {
+                            std::lock_guard<std::mutex> all_tasks_lock(all_tasks_mutex);
+                            dep_task = all_tasks[dep_id];
+                        }
+
 
                         //Remove dependencies
                         {   
