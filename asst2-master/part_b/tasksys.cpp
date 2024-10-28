@@ -218,13 +218,14 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
                         std::lock_guard<std::mutex> lock(ready_queue_mutex);
                         ready_queue.erase(task_ptr->taskId);
 
-                        if(ready_queue.empty()){
-                            {
-                            std::lock_guard<std::mutex> cv_lock(cv_mutex);
-                            finished_flag = true;
-                            }
-                            cv.notify_all();  
+                    }
+
+                    if(ready_queue.empty()){
+                        {
+                        std::lock_guard<std::mutex> cv_lock(cv_mutex);
+                        finished_flag = true;
                         }
+                        cv.notify_all();  
                     }
                 }
             }
