@@ -217,7 +217,6 @@ if __name__ == "__main__":
             for cmd, is_reference in zip(cmds, is_references):
                 cmd = "%s %s" % (cmd, test_name)
                 runtimes = run_test(cmd, is_reference=is_reference)
-                print("running test")
                 for key in runtimes:
                     if key not in all_runtimes:
                         all_runtimes[key] = []
