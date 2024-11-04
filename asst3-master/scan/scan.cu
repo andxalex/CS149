@@ -263,9 +263,11 @@ int find_repeats(int* device_input, int length, int* device_output) {
     int* scan = nullptr;
     int* num_pairs = nullptr;
     
-    cudaMalloc(&flags, length*sizeof(int));
-    cudaMalloc(&scan, length*sizeof(int));
-    cudaMalloc(&num_pairs, sizeof(int));
+    int rounded_length = nextPow2(length);
+
+    cudaMalloc((void**)&flags, rounded_length*sizeof(int));
+    cudaMalloc((void**)&scan, rounded_length*sizeof(int));
+    cudaMalloc((void**)&num_pairs, sizeof(int));
 
     // Block/thread constants
     const int threadsPerBlock = 512;
@@ -288,6 +290,11 @@ int find_repeats(int* device_input, int length, int* device_output) {
     // get num_pairs
     int host_num_pairs;
     cudaMemcpy(&host_num_pairs, num_pairs, sizeof(int), cudaMemcpyDeviceToHost);
+
+    // Free assigned mem
+    cudaFree(flags);
+    cudaFree(scan);
+    cudaFree(num_pairs);
 
     return host_num_pairs; 
 }
