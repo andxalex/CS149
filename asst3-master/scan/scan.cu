@@ -239,6 +239,15 @@ createout_kernel(int* flags, int* scan ,int length, int* device_output, int* num
     }
 }
 
+__global__ void
+copy_kernel(int* scan, int* flags, int length){
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (index<length){
+        scan[index] = flags[index];
+    }
+}
+
 // find_repeats --
 //
 // Given an array of integers `device_input`, returns an array of all
@@ -278,7 +287,9 @@ int find_repeats(int* device_input, int length, int* device_output) {
     cudaDeviceSynchronize();
 
     // create copy of flags (because scan works in place)
-    cudaMemcpy(scan, flags, length*sizeof(int),cudaMemcpyDeviceToDevice);
+    // cudaMemcpy(scan, flags, length*sizeof(int),cudaMemcpyDeviceToDevice);
+    copy_kernel<<<blocks, threadsPerBlock>>>(scan, flags, length);
+    cudaDeviceSynchronize();
 
     // Then call scan on out_index
     exclusive_scan(scan, length, scan);
