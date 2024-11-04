@@ -1,0 +1,10 @@
+---------------------------------------------------------
+Found 1 CUDA devices
+Device 0: NVIDIA GeForce GTX 1650
+   SMs:        14
+   Global mem: 4096 MB
+   CUDA Cap:   7.5
+---------------------------------------------------------
+Array size: 1000000
+Student GPU time: 3.813 ms
+Scan outputs are correct!
