@@ -29,14 +29,13 @@ static inline int nextPow2(int n) {
 
 // Upsweep kernel
 __global__ void
-upsweep_kernel(int N, int* input, int* result, int two_d, int two_dplus1) {
+upsweep_kernel(int num, int* input, int* result, int two_d, int two_dplus1) {
 
     // Get index
     int index = blockIdx.x * blockDim.x + threadIdx.x;
 
-    // Check that index is valid and perform op
-    if ((index < N) && ((index % two_dplus1) == 0)){
-        result[index + two_dplus1 - 1] += result[index+two_d - 1];
+    if (index < num){
+        result[index*two_dplus1 + two_dplus1 - 1] += result[index*two_dplus1 + two_d -1];
     }
 }
 
@@ -50,16 +49,15 @@ setlast_kernel(int N, int* result){
 
 // Downsweep kernel
 __global__ void
-downsweep_kernel(int N, int* input, int* result, int two_d, int two_dplus1) {
+downsweep_kernel(int num, int* input, int* result, int two_d, int two_dplus1) {
 
     // Get index
     int index = blockIdx.x * blockDim.x + threadIdx.x;
 
-    // Check that index is valid and perform op
-    if ((index < N) && ((index % two_dplus1) == 0)){
-        int t = result[index + two_d -1];
-        result[index + two_d - 1] = result[index + two_dplus1-1];
-        result[index + two_dplus1 -1] += t;
+    if (index < num){
+        int t = result[index*two_dplus1 +  two_d - 1];
+        result[index*two_dplus1 + two_d - 1] = result[index*two_dplus1 + two_dplus1-1];
+        result[index*two_dplus1 + two_dplus1 -1] += t;
     }
 }
 
@@ -106,10 +104,10 @@ void exclusive_scan(int* input, int N, int* result)
         // Calculate blocks, threadsPerBlock
         num = length / two_dplus1;
         threadsPerBlock = (num < THREADS_PER_BLOCK)? num:THREADS_PER_BLOCK;
-        blocks = (length + THREADS_PER_BLOCK - 1)/THREADS_PER_BLOCK;
+        blocks = (num + THREADS_PER_BLOCK - 1)/THREADS_PER_BLOCK;
 
         // Launch upsweep kernel
-        upsweep_kernel<<<blocks, threadsPerBlock>>>(length, input, result, two_d, two_dplus1);
+        upsweep_kernel<<<blocks, threadsPerBlock>>>(num, input, result, two_d, two_dplus1);
 
         // Synchronize between phases
         cudaDeviceSynchronize();
@@ -126,10 +124,10 @@ void exclusive_scan(int* input, int N, int* result)
         // Calculate blocks, threadsPerBlock
         num = length / two_dplus1;
         threadsPerBlock = (num < THREADS_PER_BLOCK)? num:THREADS_PER_BLOCK;
-        blocks = (length + THREADS_PER_BLOCK - 1)/THREADS_PER_BLOCK;
+        blocks = (length + threadsPerBlock - 1)/threadsPerBlock;
 
         // Launch downsweep kernel
-        downsweep_kernel<<<blocks, threadsPerBlock>>>(length, input, result, two_d, two_dplus1);
+        downsweep_kernel<<<blocks, threadsPerBlock>>>(num, input, result, two_d, two_dplus1);
         
         // Synchronize between phases
         cudaDeviceSynchronize();
