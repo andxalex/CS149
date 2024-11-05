@@ -95,12 +95,18 @@ void exclusive_scan(int* input, int N, int* result)
     int length = nextPow2(N);
 
     // Block/thread constants
-    const int threadsPerBlock = 512;
-    const int blocks = (N + threadsPerBlock - 1) / threadsPerBlock;
+    int num;
+    int threadsPerBlock;
+    int blocks;
 
     // upsweep phase
     for (int two_d = 1; two_d <= length/2; two_d*=2){
         int two_dplus1 = 2*two_d;
+
+        // Calculate blocks, threadsPerBlock
+        num = length / two_dplus1;
+        threadsPerBlock = (num < THREADS_PER_BLOCK)? num:THREADS_PER_BLOCK;
+        blocks = (length + threadsPerBlock - 1)/threadsPerBlock;
 
         // Launch upsweep kernel
         upsweep_kernel<<<blocks, threadsPerBlock>>>(length, input, result, two_d, two_dplus1);
@@ -116,6 +122,11 @@ void exclusive_scan(int* input, int N, int* result)
     // downsweep phase
     for (int two_d = length/2; two_d >= 1; two_d /= 2) {
         int two_dplus1 = 2*two_d;
+
+        // Calculate blocks, threadsPerBlock
+        num = length / two_dplus1;
+        threadsPerBlock = (num < THREADS_PER_BLOCK)? num:THREADS_PER_BLOCK;
+        blocks = (length + threadsPerBlock - 1)/threadsPerBlock;
 
         // Launch downsweep kernel
         downsweep_kernel<<<blocks, threadsPerBlock>>>(length, input, result, two_d, two_dplus1);
