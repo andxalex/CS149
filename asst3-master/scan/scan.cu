@@ -106,7 +106,7 @@ void exclusive_scan(int* input, int N, int* result)
         // Calculate blocks, threadsPerBlock
         num = length / two_dplus1;
         threadsPerBlock = (num < THREADS_PER_BLOCK)? num:THREADS_PER_BLOCK;
-        blocks = (length + threadsPerBlock - 1)/threadsPerBlock;
+        blocks = (length + THREADS_PER_BLOCK - 1)/THREADS_PER_BLOCK;
 
         // Launch upsweep kernel
         upsweep_kernel<<<blocks, threadsPerBlock>>>(length, input, result, two_d, two_dplus1);
@@ -126,7 +126,7 @@ void exclusive_scan(int* input, int N, int* result)
         // Calculate blocks, threadsPerBlock
         num = length / two_dplus1;
         threadsPerBlock = (num < THREADS_PER_BLOCK)? num:THREADS_PER_BLOCK;
-        blocks = (length + threadsPerBlock - 1)/threadsPerBlock;
+        blocks = (length + THREADS_PER_BLOCK - 1)/THREADS_PER_BLOCK;
 
         // Launch downsweep kernel
         downsweep_kernel<<<blocks, threadsPerBlock>>>(length, input, result, two_d, two_dplus1);
