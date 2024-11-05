@@ -288,15 +288,14 @@ int find_repeats(int* device_input, int length, int* device_output) {
     cudaMalloc((void**)&num_pairs, sizeof(int));
 
     // Block/thread constants
-    const int threadsPerBlock = 512;
-    const int blocks = (length + threadsPerBlock - 1) / threadsPerBlock;
+    int threadsPerBlock = (length < THREADS_PER_BLOCK)? length:THREADS_PER_BLOCK;
+    int blocks = (length + THREADS_PER_BLOCK - 1)/THREADS_PER_BLOCK;
 
     // First call findequals kernel
     findequals_kernel<<<blocks, threadsPerBlock>>>(device_input, length, flags);
     cudaDeviceSynchronize();
 
     // create copy of flags (because scan works in place)
-    // cudaMemcpy(scan, flags, length*sizeof(int),cudaMemcpyDeviceToDevice);
     copy_kernel<<<blocks, threadsPerBlock>>>(scan, flags, length);
     cudaDeviceSynchronize();
 
