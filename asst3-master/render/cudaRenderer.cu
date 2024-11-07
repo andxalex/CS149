@@ -470,9 +470,9 @@ __global__ void kernelRenderPixels(int* circleArr, int* numCirclesArr){
 
 
     // Determine cell id pixel belongs to
-    int cell_x = pixel_x/4;
-    int cell_y = pixel_y/4;
-    int cellId = cell_x + cell_y * 256;
+    int cell_x = pixel_x/16;
+    int cell_y = pixel_y/16;
+    int cellId = cell_x + cell_y * 64;
 
     // printf("Pixel (%d,%d) belongs to cell %d \n", pixel_x, pixel_y, cellId);
 
@@ -534,14 +534,10 @@ __global__ void kernelFillDatastructure(int* circleArr, int* numCirclesArr){
     // printf("Block (%d, %d) has id %d \n", blockIdx.x, blockIdx.y, cellId);
 
     // Each thread looks at a 27x1 cell
-    float boxL = blockIdx.x * 4;
-    float boxB = blockIdx.y * 4;
-    float boxR = boxL + 4;
-    float boxT = boxB + 4;
-
-    // int cellId = blockIdx.x  + threadIdx.x * 40;
-    
-
+    float boxL = blockIdx.x * 16;
+    float boxB = blockIdx.y * 16;
+    float boxR = boxL + 16;
+    float boxT = boxB + 16;
 
     // Get image dimensions
     int imageWidth = cuConstRendererParams.imageWidth;
@@ -797,7 +793,7 @@ CudaRenderer::advanceAnimation() {
 void func(int numCircles){
 
     // Define block / grid dimensions
-    int threadsPerBlockDim = 4;
+    int threadsPerBlockDim = 16;
     int threadsPerBlock = threadsPerBlockDim * threadsPerBlockDim;
     int blocksPerGridDim = (1024 + threadsPerBlockDim -1 )/ threadsPerBlockDim;
     int blocksPerGrid = blocksPerGridDim * blocksPerGridDim;
@@ -806,16 +802,22 @@ void func(int numCircles){
     dim3 blockDim(threadsPerBlockDim,threadsPerBlockDim);
     dim3 gridDim(blocksPerGridDim, blocksPerGridDim);
 
-    // printf("block = (%d,%d) \n", blockDim.x, blockDim.y);
-    // printf("grid = (%d, %d) \n", gridDim.x, gridDim.y);
+    printf("block = (%d,%d) \n", blockDim.x, blockDim.y);
+    printf("grid = (%d, %d) \n", gridDim.x, gridDim.y);
+    printf("Total blocks per grid = %d \n", blocksPerGrid);
 
     // Allocate gpu memory;
     int* circleArr;
     int* numCirclesArr;
-    cudaCheckError(cudaMalloc(&circleArr, blocksPerGrid * numCircles * sizeof(int)));
+    cudaError_t err = cudaMalloc(&circleArr, blocksPerGrid * numCircles * sizeof(int));
+    if (err != cudaSuccess)
+        printf("Error in cudaMalloc: %s\n", cudaGetErrorString(err));
+    
     cudaCheckError(cudaMalloc(&numCirclesArr, blocksPerGrid * sizeof(int)));
+    long long totalBytes = static_cast<long long>(blocksPerGrid) * numCircles * sizeof(int);
+    printf("Num circles is %d, sizeof(int) = %zu, blocks per grid is %d \n", numCircles, sizeof(int), blocksPerGrid);
+    printf("Allocated %lld bytes  = %lld GB\n", totalBytes, totalBytes / 1000000000LL);
 
-    printf("Allocated %ld bytes  = %ld GB\n",  blocksPerGrid * numCircles * sizeof(int), blocksPerGrid * numCircles * sizeof(int)/1000000000);
     // Get set of circle ids in each cell
     kernelFillDatastructure<<<gridDim, 1>>>(circleArr, numCirclesArr);
     cudaCheckError(cudaDeviceSynchronize());
