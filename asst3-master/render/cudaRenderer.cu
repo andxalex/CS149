@@ -504,13 +504,15 @@ __global__ void kernelRenderPixels(int* circleArr, int* numCirclesArr){
         short screenMaxY = (maxY > 0) ? ((maxY < imageHeight) ? maxY : imageHeight) : 0;
 
         // if pixel x/y are outside bounds, skip
-        if ((pixel_x < screenMinX) || (pixel_x > screenMaxX))
+        if ((pixel_x < screenMinX) || (pixel_x > screenMaxX)){
+            printf("Skipped because x oob \n");
             continue;
+        }
         
-        
-        if ((pixel_y < screenMinY) || (pixel_y > screenMaxY))
+        if ((pixel_y < screenMinY) || (pixel_y > screenMaxY)){
+            printf("Skipped because y oob \n");
             continue;
-        
+        }
 
         // flatten pixel index
         int flat_pixel_index = pixel_y * imageWidth + pixel_x;//(pixel_y-screenMinY) * imageWidth + (pixel_x-screenMinX);
@@ -567,6 +569,11 @@ __global__ void kernelFillDatastructure(int* circleArr, int* numCirclesArr){
         // printf("Detected circle %d with x = %f, y = %f, rad = %f \n",i,p.x,p.y,rad);
         // run conservative check
         bool inBox = circleInBoxConservative(p.x, p.y, rad, boxL, boxR, boxT, boxB);
+
+        if (inBox == 0)
+            continue;
+
+        inBox = circleInBox(p.x, p.y, rad, boxL, boxR, boxT, boxB);
 
         if (inBox == 0)
             continue;
