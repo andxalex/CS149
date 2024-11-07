@@ -470,9 +470,9 @@ __global__ void kernelRenderPixels(int* circleArr, int* numCirclesArr){
 
 
     // Determine cell id pixel belongs to
-    int cell_x = pixel_x/16;
-    int cell_y = pixel_y/16;
-    int cellId = cell_x + cell_y * 64;
+    int cell_x = pixel_x/32;
+    int cell_y = pixel_y/32;
+    int cellId = cell_x + cell_y * 32;
 
     // printf("Pixel (%d,%d) belongs to cell %d \n", pixel_x, pixel_y, cellId);
 
@@ -534,10 +534,10 @@ __global__ void kernelFillDatastructure(int* circleArr, int* numCirclesArr){
     // printf("Block (%d, %d) has id %d \n", blockIdx.x, blockIdx.y, cellId);
 
     // Each thread looks at a 27x1 cell
-    float boxL = blockIdx.x * 16;
-    float boxB = blockIdx.y * 16;
-    float boxR = boxL + 16;
-    float boxT = boxB + 16;
+    float boxL = blockIdx.x * 32;
+    float boxB = blockIdx.y * 32;
+    float boxR = boxL + 32;
+    float boxT = boxB + 32;
 
     // Get image dimensions
     int imageWidth = cuConstRendererParams.imageWidth;
@@ -793,7 +793,7 @@ CudaRenderer::advanceAnimation() {
 void func(int numCircles){
 
     // Define block / grid dimensions
-    int threadsPerBlockDim = 16;
+    int threadsPerBlockDim = 32;
     int threadsPerBlock = threadsPerBlockDim * threadsPerBlockDim;
     int blocksPerGridDim = (1024 + threadsPerBlockDim -1 )/ threadsPerBlockDim;
     int blocksPerGrid = blocksPerGridDim * blocksPerGridDim;
