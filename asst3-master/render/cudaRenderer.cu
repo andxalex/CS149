@@ -568,10 +568,10 @@ __global__ void kernelFillDatastructure(int* circleArr, int* numCirclesArr){
 
         // printf("Detected circle %d with x = %f, y = %f, rad = %f \n",i,p.x,p.y,rad);
         // run conservative check
-        bool inBox = circleInBoxConservative(p.x, p.y, rad, boxL, boxR, boxT, boxB);
+        // bool inBox = circleInBoxConservative(p.x, p.y, rad, boxL, boxR, boxT, boxB);
 
-        if (inBox == 0)
-            continue;
+        // if (inBox == 0)
+        //     continue;
 
         inBox = circleInBox(p.x, p.y, rad, boxL, boxR, boxT, boxB);
 
