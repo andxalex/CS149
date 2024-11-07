@@ -13,6 +13,7 @@
 #include "noise.h"
 #include "sceneLoader.h"
 #include "util.h"
+#include "circleBoxTest.cu_inl" 
 
 ////////////////////////////////////////////////////////////////////////////////////////
 // Putting all the cuda kernels here
@@ -480,8 +481,6 @@ __global__ void kernelRenderPixels(){
             continue;
         
 
-
-
         // flatten pixel index
         int flat_pixel_index = pixel_y * imageWidth + pixel_x;//(pixel_y-screenMinY) * imageWidth + (pixel_x-screenMinX);
 
@@ -494,6 +493,51 @@ __global__ void kernelRenderPixels(){
 
     }
     
+}
+
+__global__ void kernelFillDatastructure(int* circleArr){
+
+    // Each thread looks at a 27x1 cell
+    int boxL = blockIdx.x * 27;
+    int boxB = threadIdx.x;
+    int boxR = boxL + 27;
+    int boxT = boxB + 1;
+
+    int cellId = blockIdx.x  + threadIdx.x * 40;
+    
+    printf("id %d: Box L = %d, box R = %d, box T = %d, box B = %d \n", cellId, boxL, boxR, boxT, boxB);
+
+    // Get image dimensions
+    int imageWidth = cuConstRendererParams.imageWidth;
+    int imageHeight = cuConstRendererParams.imageHeight;
+
+    // Scale box bounds
+    float invWidth = 1/imageWidth;
+    float invHeight = 1/imageHeight;
+    boxL = boxL * invWidth;
+    boxR = boxR * invWidth;
+    boxT = boxT * invHeight;
+    boxB = boxB * invHeight;
+
+    // Determine which circles actually are in the cell
+    int j=0;
+    for (int i=0; i<cuConstRendererParams.numCircles; i++){
+        
+        int index3 = 3*i;
+
+        // read position and radius
+        float3 p = *(float3*)(&cuConstRendererParams.position[index3]);
+        float  rad = cuConstRendererParams.radius[i];
+
+        // run conservative check
+        bool inBox = circleInBoxConservative(p.x, p.y, rad, boxL, boxR, boxT, boxB);
+
+        if (inBox == 0)
+            continue;
+
+        // Circle definitely is in box, so add to thread's list
+        // circleArr[]
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -702,24 +746,47 @@ CudaRenderer::advanceAnimation() {
     cudaDeviceSynchronize();
 }
 
+
+void func(int numCircles){
+
+    // Define block / grid dimensions
+    dim3 blockDim(1024);
+    dim3 gridDim(40);
+
+    // Allocate gpu memory;
+    int* circleArr;
+    cudaMalloc(&circleArr, 40 * 1024 * numCircles * sizeof(int));
+
+    // Fill DS containing all blocks in arr
+    kernelFillDatastructure<<<gridDim, blockDim>>>(circleArr);
+    
+    cudaDeviceSynchronize();
+
+}
+
+
 void
 CudaRenderer::render() {
 
-    // 256 threads per block is a healthy number
-    dim3 blockDim(1024, 1);
-    // dim3 gridDim((1024 + blockDim.x - 1) / blockDim.x);
-    dim3 gridDim(14, 1);
+    // // 256 threads per block is a healthy number
+    // dim3 blockDim(1024, 1);
+    // // dim3 gridDim((1024 + blockDim.x - 1) / blockDim.x);
+    // dim3 gridDim(14, 1);
 
-    int blocks = 40;
-    int threads_per_block = 1024;
+    // int blocks = 40;
+    // int threads_per_block = 1024;
 
-    printf("Num blocks = %d, num threads per block = %d \n", gridDim.x, blockDim.x);
-    // printf("Num blocks = %d, num threads = %d \n", gridDim.x, blockDim.x);
-    // kernelRenderCircles<<<gridDim, blockDim>>>();
-    kernelRenderPixels<<<1024, 1024>>>();
+    // printf("Num blocks = %d, num threads per block = %d \n", gridDim.x, blockDim.x);
+    // // printf("Num blocks = %d, num threads = %d \n", gridDim.x, blockDim.x);
+    // // kernelRenderCircles<<<gridDim, blockDim>>>();
+    // kernelRenderPixels<<<1024, 1024>>>();
+
+    // break grid into cells of 27 pixels
+
+    // Allocate memory
 
 
-    
-    cudaDeviceSynchronize();
+
+    func(numCircles);
 
 }
