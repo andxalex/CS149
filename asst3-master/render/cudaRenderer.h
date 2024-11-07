@@ -6,7 +6,7 @@
 #endif
 
 #include "circleRenderer.h"
-
+#include <cuda_runtime.h>
 #define DEBUG
 
 #ifdef DEBUG
