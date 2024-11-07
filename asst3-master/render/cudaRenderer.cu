@@ -191,7 +191,7 @@ __global__ void kernelAdvanceHypnosis() {
 
 // kernelAdvanceBouncingBalls
 // 
-// Update the positino of the balls
+// Update the position of the balls
 __global__ void kernelAdvanceBouncingBalls() { 
     const float dt = 1.f / 60.f;
     const float kGravity = -2.8f; // sorry Newton
@@ -427,6 +427,75 @@ __global__ void kernelRenderCircles() {
     }
 }
 
+__global__ void kernelRenderPixels(){
+    // Get image dimensions
+    int imageWidth = cuConstRendererParams.imageWidth;
+    int imageHeight = cuConstRendererParams.imageHeight;
+
+    // printf("Image width = %d, image height = %d \n", imageWidth, imageHeight);
+
+    // Compute pixel position for this thread
+    int pixel_x = threadIdx.x;
+    int pixel_y = blockIdx.x;
+
+    // skip if beyond bounds
+    if (pixel_x >= imageWidth || pixel_y >= imageHeight)
+        return;
+
+    // get pixel center
+    float invWidth = 1.f / imageWidth;
+    float invHeight = 1.f / imageHeight;
+
+    float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(pixel_x) + 0.5f),
+                                        invHeight * (static_cast<float>(pixel_y) + 0.5f));
+
+
+    // Iterate over circles in order and apply colours
+    for  (int i=0; i<cuConstRendererParams.numCircles; i++){
+
+        int index3 = 3*i;
+
+        // read position and radius
+        float3 p = *(float3*)(&cuConstRendererParams.position[index3]);
+        float  rad = cuConstRendererParams.radius[i];
+
+        // compute bounding box of circle
+        short minX = static_cast<short>(imageWidth * (p.x - rad));
+        short maxX = static_cast<short>(imageWidth * (p.x + rad)) + 1;
+        short minY = static_cast<short>(imageHeight * (p.y - rad));
+        short maxY = static_cast<short>(imageHeight * (p.y + rad)) + 1;
+
+        // clamps?? is this necessary?
+        short screenMinX = (minX > 0) ? ((minX < imageWidth) ? minX : imageWidth) : 0;
+        short screenMaxX = (maxX > 0) ? ((maxX < imageWidth) ? maxX : imageWidth) : 0;
+        short screenMinY = (minY > 0) ? ((minY < imageHeight) ? minY : imageHeight) : 0;
+        short screenMaxY = (maxY > 0) ? ((maxY < imageHeight) ? maxY : imageHeight) : 0;
+
+        // if pixel x/y are outside bounds, skip
+        if ((pixel_x < screenMinX) || (pixel_x > screenMaxX))
+            continue;
+        
+        
+        if ((pixel_y < screenMinY) || (pixel_y > screenMaxY))
+            continue;
+        
+
+
+
+        // flatten pixel index
+        int flat_pixel_index = pixel_y * imageWidth + pixel_x;//(pixel_y-screenMinY) * imageWidth + (pixel_x-screenMinX);
+
+        // else get image
+        float4* imgPtr = (float4*)(&cuConstRendererParams.imageData[4 * flat_pixel_index]);  
+
+        // and colour
+        shadePixel(i, pixelCenterNorm, p, imgPtr);
+        // printf("Pixel (%d,%d) has flat index %d , screenMinX = %d, screenMaxX = %d, screenMinY = %d, screenMaxY = %d \n", pixel_x, pixel_y, flat_pixel_index, screenMinX, screenMaxX, screenMinY, screenMaxY);
+
+    }
+    
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////
 
 
@@ -637,9 +706,20 @@ void
 CudaRenderer::render() {
 
     // 256 threads per block is a healthy number
-    dim3 blockDim(256, 1);
-    dim3 gridDim((numCircles + blockDim.x - 1) / blockDim.x);
+    dim3 blockDim(1024, 1);
+    // dim3 gridDim((1024 + blockDim.x - 1) / blockDim.x);
+    dim3 gridDim(14, 1);
 
-    kernelRenderCircles<<<gridDim, blockDim>>>();
+    int blocks = 40;
+    int threads_per_block = 1024;
+
+    printf("Num blocks = %d, num threads per block = %d \n", gridDim.x, blockDim.x);
+    // printf("Num blocks = %d, num threads = %d \n", gridDim.x, blockDim.x);
+    // kernelRenderCircles<<<gridDim, blockDim>>>();
+    kernelRenderPixels<<<1024, 1024>>>();
+
+
+    
     cudaDeviceSynchronize();
+
 }

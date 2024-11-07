@@ -263,15 +263,22 @@ lookupColor(float coord, float& r, float& g, float& b) {
         {.8f, 0.8f, 1.f},
     };
 
+    // Scale the coordinate over the range of blue gradients
     float scaledCoord = coord * (N-1);
 
+    // truncate to get the base, ensure this doesn't exceed the
+    // length of the array
     int base = std::min(static_cast<int>(scaledCoord), N-1);
 
     // linearly interpolate between values in the table based on the
     // value of coord
+
+    // weight is how much closer the value is to the next base, compared to truncated
+    // base which is always smaller
     float weight = scaledCoord - static_cast<float>(base);
     float oneMinusWeight = 1.f - weight;
 
+    // Use interpolation to get colour
     r = (oneMinusWeight * lookupTable[base][0]) + (weight * lookupTable[base+1][0]);
     g = (oneMinusWeight * lookupTable[base][1]) + (weight * lookupTable[base+1][1]);
     b = (oneMinusWeight * lookupTable[base][2]) + (weight * lookupTable[base+1][2]);
@@ -290,13 +297,16 @@ RefRenderer::shadePixel(
     float px, float py, float pz,
     float* pixelData)
 {
+    // Compute distance from circle to pixel
     float diffX = px - pixelCenterX;
     float diffY = py - pixelCenterY;
     float pixelDist = diffX * diffX + diffY * diffY;
 
+    // Get radius of circle
     float rad = radius[circleIndex];
     float maxDist = rad * rad;
 
+    // if distance is greater than radius, circlt does not contribute to pixel
     // circle does not contribute to the image
     if (pixelDist > maxDist)
         return;
@@ -304,6 +314,7 @@ RefRenderer::shadePixel(
     float colR, colG, colB;
     float alpha;
 
+    // skip for now
     // there is a non-zero contribution.  Now compute the shading
     if (sceneName == SNOWFLAKES || sceneName == SNOWFLAKES_SINGLE_FRAME) {
 
@@ -322,7 +333,7 @@ RefRenderer::shadePixel(
         alpha = maxAlpha * exp(-1.f * falloffScale * normPixelDist * normPixelDist);
 
     } else {
-
+        // 
         // simple: each circle has an assigned color
         int index3 = 3 * circleIndex;
         colR = color[index3];
@@ -332,7 +343,7 @@ RefRenderer::shadePixel(
     }
 
     // The following code is *very important*: it blends the
-    // contribution of the circle primitive with the current state
+    // contribution of the circle with the current state
     // of the output image pixel.  This is a read-modify-write
     // operation on the image, and it needs to be atomic.  Moreover,
     // (and even more challenging) all writes to this pixel must be
@@ -344,6 +355,8 @@ RefRenderer::shadePixel(
     // circle 2's.  If this invariant is not preserved, the
     // rendering of transparent circles will not be correct.
 
+    // After getting the colour of the circle, update the colour of the pixel
+    // need to maintain order and atomicity
     float oneMinusAlpha = 1.f - alpha;
     pixelData[0] = alpha * colR + oneMinusAlpha * pixelData[0];
     pixelData[1] = alpha * colG + oneMinusAlpha * pixelData[1];
@@ -354,11 +367,13 @@ RefRenderer::shadePixel(
 void
 RefRenderer::render() {
 
-    // render all circles
+    // iterate over circles
     for (int circleIndex=0; circleIndex<numCircles; circleIndex++) {
 
+        // multiply index by 3 
         int index3 = 3 * circleIndex;
 
+        // Fetch circle center x/y/z/radius
         float px = position[index3];
         float py = position[index3+1];
         float pz = position[index3+2];
@@ -366,6 +381,7 @@ RefRenderer::render() {
 
         // compute the bounding box of the circle.  This bounding box
         // is in normalized coordinates
+        // Create a normalised square surrounding the circle
         float minX = px - rad;
         float maxX = px + rad;
         float minY = py - rad;
@@ -378,6 +394,7 @@ RefRenderer::render() {
         int screenMinY = CLAMP(static_cast<int>(minY * image->height), 0, image->height);
         int screenMaxY = CLAMP(static_cast<int>(maxY * image->height)+1, 0, image->height);
 
+        // Calculate inverse height and inverse width to??
         float invWidth = 1.f / image->width;
         float invHeight = 1.f / image->height;
 
@@ -389,6 +406,8 @@ RefRenderer::render() {
         for (int pixelY=screenMinY; pixelY<screenMaxY; pixelY++) {
 
             // pointer to pixel data
+            // Image is a flat array, so we need to index appropriately.
+            // but why do we multiply by 4?
             float* imgPtr = &image->data[4 * (pixelY * image->width + screenMinX)];
 
             for (int pixelX=screenMinX; pixelX<screenMaxX; pixelX++) {
