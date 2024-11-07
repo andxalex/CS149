@@ -505,12 +505,12 @@ __global__ void kernelRenderPixels(int* circleArr, int* numCirclesArr){
 
         // if pixel x/y are outside bounds, skip
         if ((pixel_x < screenMinX) || (pixel_x > screenMaxX)){
-            printf("Skipped because x oob \n");
+            // printf("Skipped because x oob \n");
             continue;
         }
         
         if ((pixel_y < screenMinY) || (pixel_y > screenMaxY)){
-            printf("Skipped because y oob \n");
+            // printf("Skipped because y oob \n");
             continue;
         }
 
@@ -809,9 +809,9 @@ void func(int numCircles){
     dim3 blockDim(threadsPerBlockDim,threadsPerBlockDim);
     dim3 gridDim(blocksPerGridDim, blocksPerGridDim);
 
-    printf("block = (%d,%d) \n", blockDim.x, blockDim.y);
-    printf("grid = (%d, %d) \n", gridDim.x, gridDim.y);
-    printf("Total blocks per grid = %d \n", blocksPerGrid);
+    // printf("block = (%d,%d) \n", blockDim.x, blockDim.y);
+    // printf("grid = (%d, %d) \n", gridDim.x, gridDim.y);
+    // printf("Total blocks per grid = %d \n", blocksPerGrid);
 
     // Allocate gpu memory;
     int* circleArr;
@@ -821,9 +821,9 @@ void func(int numCircles){
         printf("Error in cudaMalloc: %s\n", cudaGetErrorString(err));
     
     cudaCheckError(cudaMalloc(&numCirclesArr, blocksPerGrid * sizeof(int)));
-    long long totalBytes = static_cast<long long>(blocksPerGrid) * numCircles * sizeof(int);
-    printf("Num circles is %d, sizeof(int) = %zu, blocks per grid is %d \n", numCircles, sizeof(int), blocksPerGrid);
-    printf("Allocated %lld bytes  = %lld GB\n", totalBytes, totalBytes / 1000000000LL);
+    // long long totalBytes = static_cast<long long>(blocksPerGrid) * numCircles * sizeof(int);
+    // printf("Num circles is %d, sizeof(int) = %zu, blocks per grid is %d \n", numCircles, sizeof(int), blocksPerGrid);
+    // printf("Allocated %lld bytes  = %lld GB\n", totalBytes, totalBytes / 1000000000LL);
 
     // Get set of circle ids in each cell
     kernelFillDatastructure<<<gridDim, 1>>>(circleArr, numCirclesArr);
