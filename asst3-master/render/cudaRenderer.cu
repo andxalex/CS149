@@ -573,7 +573,7 @@ __global__ void kernelFillDatastructure(int* circleArr, int* numCirclesArr){
         // if (inBox == 0)
         //     continue;
 
-        inBox = circleInBox(p.x, p.y, rad, boxL, boxR, boxT, boxB);
+        bool inBox = circleInBox(p.x, p.y, rad, boxL, boxR, boxT, boxB);
 
         if (inBox == 0)
             continue;
