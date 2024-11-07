@@ -428,7 +428,7 @@ __global__ void kernelRenderCircles() {
     }
 }
 
-__global__ void kernelRenderPixels(){
+__global__ void kernelRenderPixels(int* circleArr, int* numCirclesArr){
     // Get image dimensions
     int imageWidth = cuConstRendererParams.imageWidth;
     int imageHeight = cuConstRendererParams.imageHeight;
@@ -451,14 +451,27 @@ __global__ void kernelRenderPixels(){
                                         invHeight * (static_cast<float>(pixel_y) + 0.5f));
 
 
-    // Iterate over circles in order and apply colours
-    for  (int i=0; i<cuConstRendererParams.numCircles; i++){
+    // Determine cell id pixel belongs to
+    int cell_x = pixel_x/4;
+    int cell_y = pixel_y/4;
+    int cellId = cell_x + cell_y * 256;
 
-        int index3 = 3*i;
+    // printf("Pixel (%d,%d) belongs to cell %d \n", pixel_x, pixel_y, cellId);
+
+    int numCircles = numCirclesArr[cellId];
+
+    int* thisCellCircleArr = circleArr + (cellId * cuConstRendererParams.numCircles);
+
+    // Iterate over circles in order and apply colours
+    for  (int i=0; i<numCircles; i++){
+
+        int circleIndex = thisCellCircleArr[i];
+
+        int circleIndex3 = 3*circleIndex;
 
         // read position and radius
-        float3 p = *(float3*)(&cuConstRendererParams.position[index3]);
-        float  rad = cuConstRendererParams.radius[i];
+        float3 p = *(float3*)(&cuConstRendererParams.position[circleIndex3]);
+        float  rad = cuConstRendererParams.radius[circleIndex];
 
         // compute bounding box of circle
         short minX = static_cast<short>(imageWidth * (p.x - rad));
@@ -487,37 +500,45 @@ __global__ void kernelRenderPixels(){
         // else get image
         float4* imgPtr = (float4*)(&cuConstRendererParams.imageData[4 * flat_pixel_index]);  
 
+        // printf("Shaded something? \n");
         // and colour
-        shadePixel(i, pixelCenterNorm, p, imgPtr);
+        shadePixel(circleIndex, pixelCenterNorm, p, imgPtr);
         // printf("Pixel (%d,%d) has flat index %d , screenMinX = %d, screenMaxX = %d, screenMinY = %d, screenMaxY = %d \n", pixel_x, pixel_y, flat_pixel_index, screenMinX, screenMaxX, screenMinY, screenMaxY);
 
     }
     
 }
 
-__global__ void kernelFillDatastructure(int* circleArr){
+__global__ void kernelFillDatastructure(int* circleArr, int* numCirclesArr){
+
+    // Get cell id
+    int cellId = blockIdx.x + blockIdx.y * gridDim.x;
+    // printf("Block (%d, %d) has id %d \n", blockIdx.x, blockIdx.y, cellId);
 
     // Each thread looks at a 27x1 cell
-    int boxL = blockIdx.x * 27;
-    int boxB = threadIdx.x;
-    int boxR = boxL + 27;
-    int boxT = boxB + 1;
+    float boxL = blockIdx.x * 4;
+    float boxB = blockIdx.y * 4;
+    float boxR = boxL + 4;
+    float boxT = boxB + 4;
 
-    int cellId = blockIdx.x  + threadIdx.x * 40;
+    // int cellId = blockIdx.x  + threadIdx.x * 40;
     
-    printf("id %d: Box L = %d, box R = %d, box T = %d, box B = %d \n", cellId, boxL, boxR, boxT, boxB);
+
 
     // Get image dimensions
     int imageWidth = cuConstRendererParams.imageWidth;
     int imageHeight = cuConstRendererParams.imageHeight;
-
+    // printf("%d, %d", imageWidth, imageHeight);
     // Scale box bounds
-    float invWidth = 1/imageWidth;
-    float invHeight = 1/imageHeight;
+    float invWidth = 1.f/imageWidth;
+    float invHeight = 1.f/imageHeight;
+    // printf("%f, %f \n", invWidth, invHeight);
     boxL = boxL * invWidth;
     boxR = boxR * invWidth;
     boxT = boxT * invHeight;
     boxB = boxB * invHeight;
+
+    // printf("id %d: Box L = %f, box R = %f, box T = %f, box B = %f \n", cellId, boxL, boxR, boxT, boxB);
 
     // Determine which circles actually are in the cell
     int j=0;
@@ -529,15 +550,23 @@ __global__ void kernelFillDatastructure(int* circleArr){
         float3 p = *(float3*)(&cuConstRendererParams.position[index3]);
         float  rad = cuConstRendererParams.radius[i];
 
+        // printf("Detected circle %d with x = %f, y = %f, rad = %f \n",i,p.x,p.y,rad);
         // run conservative check
         bool inBox = circleInBoxConservative(p.x, p.y, rad, boxL, boxR, boxT, boxB);
 
         if (inBox == 0)
             continue;
 
-        // Circle definitely is in box, so add to thread's list
-        // circleArr[]
+        // printf("askdjhakjdhakjshd\n");
+
+        // circle could be in box, add to cell's list
+        circleArr[cellId * cuConstRendererParams.numCircles + j] = i;
+        j ++;
     }
+
+    numCirclesArr[cellId] = j;
+    // printf("Cell %d depends on %d circles \n", cellId, numCirclesArr[cellId]);
+    
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -750,16 +779,30 @@ CudaRenderer::advanceAnimation() {
 void func(int numCircles){
 
     // Define block / grid dimensions
-    dim3 blockDim(1024);
-    dim3 gridDim(40);
+    int threadsPerBlockDim = 4;
+    int threadsPerBlock = threadsPerBlockDim * threadsPerBlockDim;
+    int blocksPerGridDim = (1024 + threadsPerBlockDim -1 )/ threadsPerBlockDim;
+    int blocksPerGrid = blocksPerGridDim * blocksPerGridDim;
+
+    // Define 2d structure of blocks (cells)
+    dim3 blockDim(threadsPerBlockDim,threadsPerBlockDim);
+    dim3 gridDim(blocksPerGridDim, blocksPerGridDim);
+
+    // printf("block = (%d,%d) \n", blockDim.x, blockDim.y);
+    // printf("grid = (%d, %d) \n", gridDim.x, gridDim.y);
 
     // Allocate gpu memory;
     int* circleArr;
-    cudaMalloc(&circleArr, 40 * 1024 * numCircles * sizeof(int));
+    int* numCirclesArr;
+    cudaMalloc(&circleArr, blocksPerGrid * numCircles * sizeof(int));
+    cudaMalloc(&numCirclesArr, blocksPerGrid * sizeof(int));
 
-    // Fill DS containing all blocks in arr
-    kernelFillDatastructure<<<gridDim, blockDim>>>(circleArr);
-    
+    // Get set of circle ids in each cell
+    kernelFillDatastructure<<<gridDim, 1>>>(circleArr, numCirclesArr);
+    cudaDeviceSynchronize();
+
+    // Execute pixels 
+    kernelRenderPixels<<<1024,1024>>>(circleArr, numCirclesArr);
     cudaDeviceSynchronize();
 
 }
