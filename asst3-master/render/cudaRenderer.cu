@@ -794,16 +794,17 @@ void func(int numCircles){
     // Allocate gpu memory;
     int* circleArr;
     int* numCirclesArr;
-    cudaMalloc(&circleArr, blocksPerGrid * numCircles * sizeof(int));
-    cudaMalloc(&numCirclesArr, blocksPerGrid * sizeof(int));
+    cudaCheckError(cudaMalloc(&circleArr, blocksPerGrid * numCircles * sizeof(int)));
+    cudaCheckError(cudaMalloc(&numCirclesArr, blocksPerGrid * sizeof(int)));
 
+    printf("Allocated %ld bytes  = %ld GB\n",  blocksPerGrid * numCircles * sizeof(int), blocksPerGrid * numCircles * sizeof(int)/1000000000);
     // Get set of circle ids in each cell
     kernelFillDatastructure<<<gridDim, 1>>>(circleArr, numCirclesArr);
-    cudaDeviceSynchronize();
+    cudaCheckError(cudaDeviceSynchronize());
 
     // Execute pixels 
     kernelRenderPixels<<<1024,1024>>>(circleArr, numCirclesArr);
-    cudaDeviceSynchronize();
+    cudaCheckError(cudaDeviceSynchronize());
 
 }
 
