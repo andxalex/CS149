@@ -498,10 +498,10 @@ __global__ void kernelRenderPixels(int* circleArr, int* numCirclesArr){
         short maxY = static_cast<short>(imageHeight * (p.y + rad)) + 1;
 
         // clamps?? is this necessary?
-        short screenMinX = (minX > 0) ? ((minX < imageWidth) ? minX : imageWidth) : 0;
-        short screenMaxX = (maxX > 0) ? ((maxX < imageWidth) ? maxX : imageWidth) : 0;
-        short screenMinY = (minY > 0) ? ((minY < imageHeight) ? minY : imageHeight) : 0;
-        short screenMaxY = (maxY > 0) ? ((maxY < imageHeight) ? maxY : imageHeight) : 0;
+        short screenMinX = max(0, min( minX,imageWidth)); //(minX > 0) ? ((minX < imageWidth) ? minX : imageWidth) : 0;
+        short screenMaxX = max(0, min( maxX,imageWidth)); //(maxX > 0) ? ((maxX < imageWidth) ? maxX : imageWidth) : 0;
+        short screenMinY = max(0, min( minY,imageHeight)); //(minY > 0) ? ((minY < imageHeight) ? minY : imageHeight) : 0;
+        short screenMaxY = max(0, min( maxY,imageHeight)); //(maxY > 0) ? ((maxY < imageHeight) ? maxY : imageHeight) : 0;
 
         // if pixel x/y are outside bounds, skip
         if ((pixel_x < screenMinX) || (pixel_x > screenMaxX)){
