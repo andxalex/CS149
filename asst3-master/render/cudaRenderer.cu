@@ -470,9 +470,9 @@ __global__ void kernelRenderPixels(int* circleArr, int* numCirclesArr){
 
 
     // Determine cell id pixel belongs to
-    int cell_x = pixel_x/64;
-    int cell_y = pixel_y/64;
-    int cellId = cell_x + cell_y * 16;
+    int cell_x = pixel_x/32;
+    int cell_y = pixel_y/32;
+    int cellId = cell_x + cell_y * 32;
 
     // printf("Pixel (%d,%d) belongs to cell %d \n", pixel_x, pixel_y, cellId);
 
@@ -536,10 +536,10 @@ __global__ void kernelFillDatastructure(int* circleArr, int* numCirclesArr){
     // printf("Block (%d, %d) has id %d \n", blockIdx.x, blockIdx.y, cellId);
 
     // Each thread looks at a 27x1 cell
-    float boxL = blockIdx.x * 64;
-    float boxB = blockIdx.y * 64;
-    float boxR = boxL + 64;
-    float boxT = boxB + 64;
+    float boxL = blockIdx.x * 32;
+    float boxB = blockIdx.y * 32;
+    float boxR = boxL + 32;
+    float boxT = boxB + 32;
 
     // Get image dimensions
     int imageWidth = cuConstRendererParams.imageWidth;
@@ -801,7 +801,7 @@ CudaRenderer::advanceAnimation() {
 void func(int numCircles){
 
     // Define block / grid dimensions
-    int threadsPerBlockDim = 64;
+    int threadsPerBlockDim = 32;
     int threadsPerBlock = threadsPerBlockDim * threadsPerBlockDim;
     int blocksPerGridDim = (1024 + threadsPerBlockDim -1 )/ threadsPerBlockDim;
     int blocksPerGrid = blocksPerGridDim * blocksPerGridDim;
@@ -817,9 +817,9 @@ void func(int numCircles){
     // Allocate gpu memory;
     int* circleArr;
     int* numCirclesArr;
-    cudaError_t err = cudaMalloc(&circleArr, blocksPerGrid * numCircles * sizeof(int));
-    if (err != cudaSuccess)
-        printf("Error in cudaMalloc: %s\n", cudaGetErrorString(err));
+    cudaError_t err2 = cudaMalloc(&circleArr, blocksPerGrid * numCircles * sizeof(int));
+    if (err2 != cudaSuccess)
+        printf("Error in cudaMalloc: %s\n", cudaGetErrorString(err2));
     
     cudaCheckError(cudaMalloc(&numCirclesArr, blocksPerGrid * sizeof(int)));
     // long long totalBytes = static_cast<long long>(blocksPerGrid) * numCircles * sizeof(int);
@@ -828,6 +828,10 @@ void func(int numCircles){
 
     // Get set of circle ids in each cell
     kernelFillDatastructure<<<gridDim, blockDim>>>(circleArr, numCirclesArr);
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        printf("Kernel launch error: %s\n", cudaGetErrorString(err));
+    }
     cudaCheckError(cudaDeviceSynchronize());
 
     // Execute pixels 
