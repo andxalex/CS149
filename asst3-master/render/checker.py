@@ -123,6 +123,7 @@ def run_scenes(n_runs):
         # Check for performance
         if scene in score_scene_names:
             # Do multiple perf runs
+            print("Running once")
             stu_times[scene] = [get_time("render", scene) for _ in range(n_runs)]
             ref_times[scene] = [get_time("render_ref", scene) for _ in range(n_runs)]
 
