@@ -1,0 +1,27 @@
+Rendering to 1024x1024 image
+Loaded scene with 2000000 circles
+Loaded scene with 2000000 circles
+---------------------------------------------------------
+Initializing CUDA for CudaRenderer
+Found 1 CUDA devices
+Device 0: NVIDIA T4G
+   SMs:        40
+   Global mem: 14918 MB
+   CUDA Cap:   7.5
+---------------------------------------------------------
+
+Running benchmark, 1 frames, beginning at frame 0 ...
+Dumping frames to logs/output_xxx.ppm
+Time for kernelFillDatastructure: 285.33 ms
+Time for kernelRenderPixels: 103.02 ms
+Copying image data from device
+Wrote image file logs/output_0000.ppm
+Copying image data from device
+***************** Correctness check passed **************************
+Clear:    0.1426 ms
+Advance:  0.0021 ms
+Render:   390.2505 ms
+Total:    390.3952 ms
+File IO:  85.9180 ms
+
+Overall:  0.7812 sec (note units are seconds)

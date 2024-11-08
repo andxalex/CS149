@@ -827,19 +827,46 @@ void func(int numCircles){
     // printf("Allocated %lld bytes  = %lld GB\n", totalBytes, totalBytes / 1000000000LL);
 
     // Get set of circle ids in each cell
+
+
+    // Declare CUDA events for timing
+    cudaEvent_t startFill, stopFill, startRender, stopRender;
+    cudaEventCreate(&startFill);
+    cudaEventCreate(&stopFill);
+    cudaEventCreate(&startRender);
+    cudaEventCreate(&stopRender);
+
+    cudaEventRecord(startFill);
     kernelFillDatastructure<<<1, gridDim>>>(circleArr, numCirclesArr);
+    cudaEventRecord(stopFill);
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) {
         printf("Kernel launch error: %s\n", cudaGetErrorString(err));
     }
     cudaCheckError(cudaDeviceSynchronize());
 
+    float millisecondsFill = 0;
+    cudaEventElapsedTime(&millisecondsFill, startFill, stopFill);
+    printf("Time for kernelFillDatastructure: %.2f ms\n", millisecondsFill);
+
     // Execute pixels 
+    cudaEventRecord(startRender);
     kernelRenderPixels<<<1024,1024>>>(circleArr, numCirclesArr);
+    cudaEventRecord(stopRender);
     cudaCheckError(cudaDeviceSynchronize());
 
-    cudaFree(&numCirclesArr);
-    cudaFree(&circleArr);
+    // Calculate the elapsed time for kernelRenderPixels
+    float millisecondsRender = 0;
+    cudaEventElapsedTime(&millisecondsRender, startRender, stopRender);
+    printf("Time for kernelRenderPixels: %.2f ms\n", millisecondsRender);
+
+    // Cleanup
+    cudaEventDestroy(startFill);
+    cudaEventDestroy(stopFill);
+    cudaEventDestroy(startRender);
+    cudaEventDestroy(stopRender);
+    cudaFree(numCirclesArr);
+    cudaFree(circleArr);
 }
 
 
