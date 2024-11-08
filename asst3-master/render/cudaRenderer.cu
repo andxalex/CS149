@@ -532,12 +532,12 @@ __global__ void kernelRenderPixels(int* circleArr, int* numCirclesArr){
 __global__ void kernelFillDatastructure(int* circleArr, int* numCirclesArr){
 
     // Get cell id
-    int cellId = threadIdx.x + threadIdx.y * blockDim.x;
+    int cellId = blockIdx.x + blockIdx.y * gridDim.x;
     // printf("Block (%d, %d) has id %d \n", blockIdx.x, blockIdx.y, cellId);
 
     // Each thread looks at a 27x1 cell
-    float boxL = threadIdx.x * 64;
-    float boxB = threadIdx.y * 64;
+    float boxL = blockIdx.x * 64;
+    float boxB = blockIdx.y * 64;
     float boxR = boxL + 64;
     float boxT = boxB + 64;
 
@@ -827,7 +827,7 @@ void func(int numCircles){
     // printf("Allocated %lld bytes  = %lld GB\n", totalBytes, totalBytes / 1000000000LL);
 
     // Get set of circle ids in each cell
-    kernelFillDatastructure<<<1, gridDim>>>(circleArr, numCirclesArr);
+    kernelFillDatastructure<<<gridDim, blockDim>>>(circleArr, numCirclesArr);
     cudaCheckError(cudaDeviceSynchronize());
 
     // Execute pixels 
