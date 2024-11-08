@@ -548,6 +548,7 @@ __global__ void kernelFillDatastructure(int* circleArr, int* numCirclesArr){
     // Scale box bounds
     float invWidth = 1.f/imageWidth;
     float invHeight = 1.f/imageHeight;
+
     // printf("%f, %f \n", invWidth, invHeight);
     boxL = boxL * invWidth;
     boxR = boxR * invWidth;
@@ -833,6 +834,8 @@ void func(int numCircles){
     kernelRenderPixels<<<1024,1024>>>(circleArr, numCirclesArr);
     cudaCheckError(cudaDeviceSynchronize());
 
+    cudaFree(&numCirclesArr);
+    cudaFree(&circleArr);
 }
 
 
