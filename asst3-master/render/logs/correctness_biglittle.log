@@ -12,16 +12,14 @@ Device 0: NVIDIA T4G
 
 Running benchmark, 1 frames, beginning at frame 0 ...
 Dumping frames to logs/output_xxx.ppm
-Time for kernelFillDatastructure: 1.66 ms
-Time for kernelRenderPixels: 31.24 ms
 Copying image data from device
 Wrote image file logs/output_0000.ppm
 Copying image data from device
 ***************** Correctness check passed **************************
-Clear:    0.1349 ms
-Advance:  0.0019 ms
-Render:   33.4036 ms
-Total:    33.5405 ms
-File IO:  86.3072 ms
+Clear:    0.1300 ms
+Advance:  0.0026 ms
+Render:   14.6343 ms
+Total:    14.7668 ms
+File IO:  86.4264 ms
 
-Overall:  8.8770 sec (note units are seconds)
+Overall:  8.5207 sec (note units are seconds)

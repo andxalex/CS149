@@ -52,6 +52,11 @@ struct GlobalConstants {
     float* imageData;
 };
 
+#define BLOCK_SIDE 32
+#define BLOCK_SIZE 1024
+#define SCAN_BLOCK_DIM   BLOCK_SIZE  // needed by sharedMemExclusiveScan implementation
+#include "exclusiveScan.cu_inl"
+
 // Global variable that is in scope, but read-only, for all cuda
 // kernels.  The __constant__ modifier designates this variable will
 // be stored in special "constant" memory on the GPU. (we didn't talk
@@ -470,9 +475,9 @@ __global__ void kernelRenderPixels(int* circleArr, int* numCirclesArr){
 
 
     // Determine cell id pixel belongs to
-    int cell_x = pixel_x/64;
-    int cell_y = pixel_y/64;
-    int cellId = cell_x + cell_y * 16;
+    int cell_x = pixel_x/32;
+    int cell_y = pixel_y/32;
+    int cellId = cell_x + cell_y * 32;
 
     // printf("Pixel (%d,%d) belongs to cell %d \n", pixel_x, pixel_y, cellId);
 
@@ -497,11 +502,11 @@ __global__ void kernelRenderPixels(int* circleArr, int* numCirclesArr){
         short minY = static_cast<short>(imageHeight * (p.y - rad));
         short maxY = static_cast<short>(imageHeight * (p.y + rad)) + 1;
 
-        // clamps?? is this necessary?
-        short screenMinX = max(0, min( minX,imageWidth)); //(minX > 0) ? ((minX < imageWidth) ? minX : imageWidth) : 0;
-        short screenMaxX = max(0, min( maxX,imageWidth)); //(maxX > 0) ? ((maxX < imageWidth) ? maxX : imageWidth) : 0;
-        short screenMinY = max(0, min( minY,imageHeight)); //(minY > 0) ? ((minY < imageHeight) ? minY : imageHeight) : 0;
-        short screenMaxY = max(0, min( maxY,imageHeight)); //(maxY > 0) ? ((maxY < imageHeight) ? maxY : imageHeight) : 0;
+        // Clamp it
+        short screenMinX = max(0, min( minX,imageWidth));
+        short screenMaxX = max(0, min( maxX,imageWidth)); 
+        short screenMinY = max(0, min( minY,imageHeight)); 
+        short screenMaxY = max(0, min( maxY,imageHeight)); 
 
         // if pixel x/y are outside bounds, skip
         if ((pixel_x < screenMinX) || (pixel_x > screenMaxX)){
@@ -529,22 +534,61 @@ __global__ void kernelRenderPixels(int* circleArr, int* numCirclesArr){
     
 }
 
-__global__ void kernelFillDatastructure(int* circleArr, int* numCirclesArr){
+// __global__ void kernelPlease(int* circleArr, int* numCirclesArr){
+//     __shared__ uint prefixSumInput[1024];
+//     __shared__ uint prefixSumOutput[1024];
+//     __shared__ uint prefixSumScratch[2 * 1024];
+
+//     int cellId = blockIdx.x + blockIdx.y * gridDim.x;
+//     int threadId = threadIdx.x + threadIdx.y * blockDim.x;
+
+//     int numCirclesPerThread = (cuConstRendererParams.numCircles + blockSize - 1)/blockSize;
+//     printf("numCirclesPerThread = %d \n", numCirclesPerThread);
+//     for (int i=0; i<numCirclesPerThread; i++){
+//         index = i * numCirclesPerThread + threadId;
+
+//         if (index > cuConstRendererParams.numCircles){
+//             break;
+//         }
+
+//         // Load circleArr portion into shared memory
+//         prefixSumInput[threadId] = circleArr[index]; // <- this index is wrong
+
+//         // Wait for all threads to load an element -> 1024 loads total
+//         __syncthreads();
+
+//         // Can now execute partial exclusive scan
+//         sharedMemExclusiveScan(threadId, prefixSumInput, prefixSumOutput, prefixSumScratch, 1024);
+
+//         // Sync again to ensure it has finished
+//         _syncthreads();
+
+//         // Get number of circles the block depends on
+//         int numDepCircles = prefixSumOutput[1024-1];
+//         numCirclesArr[]
+
+//         // This is uncompleted, the loop is the same as "kernelFillDatastructure's"
+//         // might aswell fuse the kernels.
+//     }
+// }
+
+__global__ void kernelFillDatastructure(int* circleArr){
 
     // Get cell id
-    int cellId = threadIdx.x + threadIdx.y * blockDim.x;
+    int cellId = blockIdx.x + blockIdx.y * gridDim.x;
+    int threadId = threadIdx.x + threadIdx.y * blockDim.x;
     // printf("Block (%d, %d) has id %d \n", blockIdx.x, blockIdx.y, cellId);
 
     // Each thread looks at a 27x1 cell
-    float boxL = threadIdx.x * 64;
-    float boxB = threadIdx.y * 64;
-    float boxR = boxL + 64;
-    float boxT = boxB + 64;
+    float boxL = blockIdx.x * 32;
+    float boxB = blockIdx.y * 32;
+    float boxR = boxL + 32;
+    float boxT = boxB + 32;
 
     // Get image dimensions
     int imageWidth = cuConstRendererParams.imageWidth;
     int imageHeight = cuConstRendererParams.imageHeight;
-    // printf("%d, %d", imageWidth, imageHeight);
+
     // Scale box bounds
     float invWidth = 1.f/imageWidth;
     float invHeight = 1.f/imageHeight;
@@ -555,40 +599,175 @@ __global__ void kernelFillDatastructure(int* circleArr, int* numCirclesArr){
     boxT = boxT * invHeight;
     boxB = boxB * invHeight;
 
-    // printf("id %d: Box L = %f, box R = %f, box T = %f, box B = %f \n", cellId, boxL, boxR, boxT, boxB);
-
     // Determine which circles actually are in the cell
     int j=0;
-    for (int i=0; i<cuConstRendererParams.numCircles; i++){
-        
-        int index3 = 3*i;
+    int blockSize = blockDim.x * blockDim.y;
+    int numCirclesPerThread = (cuConstRendererParams.numCircles + blockSize - 1)/blockSize;
+    printf("numCirclesPerThread = %d \n", numCirclesPerThread);
+    for (int i=0; i<numCirclesPerThread; i++){
+
+        // Each thread points to a consecutive index
+        int index = i * blockSize + threadId;
+
+        if (index>cuConstRendererParams.numCircles)
+            return;
+
+        int index3 = 3*index;
 
         // read position and radius
         float3 p = *(float3*)(&cuConstRendererParams.position[index3]);
-        float  rad = cuConstRendererParams.radius[i];
-
-        // printf("Detected circle %d with x = %f, y = %f, rad = %f \n",i,p.x,p.y,rad);
-        // run conservative check
-        // bool inBox = circleInBoxConservative(p.x, p.y, rad, boxL, boxR, boxT, boxB);
-
-        // if (inBox == 0)
-        //     continue;
+        float  rad = cuConstRendererParams.radius[index];
 
         bool inBox = circleInBox(p.x, p.y, rad, boxL, boxR, boxT, boxB);
 
-        if (inBox == 0)
+        if (inBox == 0){
+            circleArr[cellId * cuConstRendererParams.numCircles + index] = 0;
             continue;
-
-        // printf("askdjhakjdhakjshd\n");
-
-        // circle could be in box, add to cell's list
-        circleArr[cellId * cuConstRendererParams.numCircles + j] = i;
-        j ++;
+        }
+        circleArr[cellId * cuConstRendererParams.numCircles + index] = 1;
     }
 
-    numCirclesArr[cellId] = j;
-    // printf("Cell %d depends on %d circles \n", cellId, numCirclesArr[cellId]);
-    
+}
+
+
+__global__ void FusedKernel(){
+
+    // Shared memories for exclusive sum shenanigans
+    __shared__ uint prefixSumInput[BLOCK_SIZE];
+    __shared__ uint prefixSumOutput[BLOCK_SIZE];
+    __shared__ uint prefixSumScratch[2 * BLOCK_SIZE];
+    __shared__ uint intersectingCircles[BLOCK_SIZE];
+
+    // Get cell id, threadId
+    int cellId = blockIdx.x + blockIdx.y * gridDim.x;
+    int threadId = threadIdx.x + threadIdx.y * blockDim.x;
+
+    // Each thread is part of a BLOCK_SIDE x BLOCK_SIDE cell
+    float L = blockIdx.x * BLOCK_SIDE;  // left side
+    float B = blockIdx.y * BLOCK_SIDE;  // bottom
+    float R = L + BLOCK_SIDE;           // right
+    float T = B + BLOCK_SIDE;           // top
+
+    // Get image dimensions to scale cell
+    int imageWidth = cuConstRendererParams.imageWidth;
+    int imageHeight = cuConstRendererParams.imageHeight;
+    float invWidth = 1.f/imageWidth;
+    float invHeight = 1.f/imageHeight;
+    L = L * invWidth;
+    R = R * invWidth;
+    T = T * invHeight;
+    B = B * invHeight;
+
+    // Threads also correspond to pixels, find each pixel's x/y and norm
+    int pixel_x = threadIdx.x + blockIdx.x * BLOCK_SIDE;
+    int pixel_y = threadIdx.y + blockIdx.y * BLOCK_SIDE;
+    float2 pixelCenterNorm = make_float2(invWidth * (static_cast<float>(pixel_x) + 0.5f),
+                                    invHeight * (static_cast<float>(pixel_y) + 0.5f));
+
+    // printf("Pixel (%d, %d) reporting, belongs to cell %d.\n", pixel_x, pixel_y, cellId);
+
+    // Loop over circles. Each thread is assigned a specific circle id
+    // and evaluates whether the particular circle intersects its cell.
+    // The image is processed in BLOCK_SIDE x BLOCK_SIDE chunks:
+    for (int i=0; i<cuConstRendererParams.numCircles; i+=BLOCK_SIZE){
+        // add threadId to i -> each thread evaluates a different circle
+        int index = i + threadId;
+
+        // if index is not a valid circle, go to colouring stage
+        if (index>cuConstRendererParams.numCircles){
+            prefixSumInput[threadId] = 0;
+            goto SKIP_INTERSECT_CHECK;
+        }
+
+        // printf("Thread %d points at circle %d \n", threadId, index);
+        {
+            // read position and radius
+            float3 p = *(float3*)(&cuConstRendererParams.position[3*index]);
+            float  rad = cuConstRendererParams.radius[index];
+
+            // Intersecting circles are marked with "1", others are marked with "0"
+            prefixSumInput[threadId] = circleInBox(p.x, p.y, rad, L, R, T, B);
+        }
+        SKIP_INTERSECT_CHECK:
+
+        // Sync to ensure that 1024 threads have evaluated 1024 circles
+        __syncthreads();
+
+        // Run exclusive sum to get indices and the number of circles that
+        // intersect the box (<1024)
+        sharedMemExclusiveScan(threadId, prefixSumInput, prefixSumOutput, prefixSumScratch, BLOCK_SIZE);
+
+        __syncthreads();
+
+        // Get number of circles, need to add last element of prefixSumInput because of exclusivity
+        int numIntersectingCircles = prefixSumOutput[BLOCK_SIZE-1] + prefixSumInput[BLOCK_SIZE-1];
+
+        // sync to ensure sum is done
+        __syncthreads();
+
+        // We have the indices now but still need to create a list.
+        // !!THREADS ARE STILL POINTING TO CIRCLES!!
+        // use that to overwrite one of the arrays
+        if (prefixSumInput[threadId]){                  // if original circle intersected the box
+            int newIndex = prefixSumOutput[threadId];    // get new index from prefix sum
+            intersectingCircles[newIndex] = index;           // overwrite original array using the new index
+        }
+
+        // sync to ensure intersecting circle list is done
+        __syncthreads();
+        float4 Color =  *(float4*)(&cuConstRendererParams.imageData[4 * (pixel_x + pixel_y*imageWidth)]); 
+        for (int j=0; j<numIntersectingCircles;j++){
+            int circleIndex = intersectingCircles[j];
+            float3 p = *(float3*)(&cuConstRendererParams.position[3*circleIndex]);
+            float rad = cuConstRendererParams.radius[circleIndex];;
+
+            float diffX = p.x - pixelCenterNorm.x;
+            float diffY = p.y - pixelCenterNorm.y;
+            float pixelDist = diffX * diffX + diffY * diffY;
+            float maxDist = rad * rad;
+
+            // circle does not contribute to the image
+            if (pixelDist > maxDist)
+                continue;
+
+            float3 rgb;
+            float alpha;
+
+            if (cuConstRendererParams.sceneName == SNOWFLAKES || cuConstRendererParams.sceneName == SNOWFLAKES_SINGLE_FRAME) {
+
+                const float kCircleMaxAlpha = .5f;
+                const float falloffScale = 4.f;
+
+                float normPixelDist = sqrt(pixelDist) / rad;
+                rgb = lookupColor(normPixelDist);
+
+                float maxAlpha = .6f + .4f * (1.f-p.z);
+                maxAlpha = kCircleMaxAlpha * fmaxf(fminf(maxAlpha, 1.f), 0.f); // kCircleMaxAlpha * clamped value
+                alpha = maxAlpha * exp(-1.f * falloffScale * normPixelDist * normPixelDist);
+
+            } else {
+                // simple: each circle has an assigned color
+                int index3 = 3 * circleIndex;
+                rgb = *(float3*)&(cuConstRendererParams.color[index3]);
+                alpha = .5f;
+            }
+
+            float oneMinusAlpha = 1.f - alpha;
+
+            // BEGIN SHOULD-BE-ATOMIC REGION
+            // global memory read
+
+            float4 newColor;
+            newColor.x = alpha * rgb.x + oneMinusAlpha * Color.x;
+            newColor.y = alpha * rgb.y + oneMinusAlpha * Color.y;
+            newColor.z = alpha * rgb.z + oneMinusAlpha * Color.z;
+            newColor.w = alpha + Color.w;
+
+            // global memory write
+            Color = newColor;
+        }
+        *(float4*)(&cuConstRendererParams.imageData[4 * (pixel_x + pixel_y*imageWidth)]) = Color;
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -798,100 +977,84 @@ CudaRenderer::advanceAnimation() {
 }
 
 
-void func(int numCircles){
+// void func(int numCircles){
 
-    // Define block / grid dimensions
-    int threadsPerBlockDim = 64;
-    int threadsPerBlock = threadsPerBlockDim * threadsPerBlockDim;
-    int blocksPerGridDim = (1024 + threadsPerBlockDim -1 )/ threadsPerBlockDim;
-    int blocksPerGrid = blocksPerGridDim * blocksPerGridDim;
+//     // Define block / grid dimensions
+//     int threadsPerBlockDim = 32;
+//     int threadsPerBlock = threadsPerBlockDim * threadsPerBlockDim;
+//     int blocksPerGridDim = (1024 + threadsPerBlockDim -1 )/ threadsPerBlockDim;
+//     int blocksPerGrid = blocksPerGridDim * blocksPerGridDim;
 
-    // Define 2d structure of blocks (cells)
-    dim3 blockDim(threadsPerBlockDim,threadsPerBlockDim);
-    dim3 gridDim(blocksPerGridDim, blocksPerGridDim);
+//     // Define 2d structure of blocks (cells)
+//     dim3 blockDim(threadsPerBlockDim,threadsPerBlockDim);
+//     dim3 gridDim(blocksPerGridDim, blocksPerGridDim);
 
-    // printf("block = (%d,%d) \n", blockDim.x, blockDim.y);
-    // printf("grid = (%d, %d) \n", gridDim.x, gridDim.y);
-    // printf("Total blocks per grid = %d \n", blocksPerGrid);
+//     // printf("block = (%d,%d) \n", blockDim.x, blockDim.y);
+//     // printf("grid = (%d, %d) \n", gridDim.x, gridDim.y);
+//     // printf("Total blocks per grid = %d \n", blocksPerGrid);
 
-    // Allocate gpu memory;
-    int* circleArr;
-    int* numCirclesArr;
-    cudaError_t err2 = cudaMalloc(&circleArr, blocksPerGrid * numCircles * sizeof(int));
-    if (err2 != cudaSuccess)
-        printf("Error in cudaMalloc: %s\n", cudaGetErrorString(err2));
+//     // Allocate gpu memory;
+//     int* circleArr;
+//     cudaError_t err2 = cudaMalloc(&circleArr, blocksPerGrid * numCircles * sizeof(int));
+//     if (err2 != cudaSuccess)
+//         printf("Error in cudaMalloc: %s\n", cudaGetErrorString(err2));
     
-    cudaCheckError(cudaMalloc(&numCirclesArr, blocksPerGrid * sizeof(int)));
-    // long long totalBytes = static_cast<long long>(blocksPerGrid) * numCircles * sizeof(int);
-    // printf("Num circles is %d, sizeof(int) = %zu, blocks per grid is %d \n", numCircles, sizeof(int), blocksPerGrid);
-    // printf("Allocated %lld bytes  = %lld GB\n", totalBytes, totalBytes / 1000000000LL);
+//     // long long totalBytes = static_cast<long long>(blocksPerGrid) * numCircles * sizeof(int);
+//     // printf("Num circles is %d, sizeof(int) = %zu, blocks per grid is %d \n", numCircles, sizeof(int), blocksPerGrid);
+//     // printf("Allocated %lld bytes  = %lld GB\n", totalBytes, totalBytes / 1000000000LL);
 
-    // Get set of circle ids in each cell
+//     // Get set of circle ids in each cell
 
 
-    // Declare CUDA events for timing
-    cudaEvent_t startFill, stopFill, startRender, stopRender;
-    cudaEventCreate(&startFill);
-    cudaEventCreate(&stopFill);
-    cudaEventCreate(&startRender);
-    cudaEventCreate(&stopRender);
+//     // Declare CUDA events for timing
+//     cudaEvent_t startFill, stopFill, startRender, stopRender;
+//     cudaEventCreate(&startFill);
+//     cudaEventCreate(&stopFill);
+//     cudaEventCreate(&startRender);
+//     cudaEventCreate(&stopRender);
 
-    cudaEventRecord(startFill);
-    kernelFillDatastructure<<<1, gridDim>>>(circleArr, numCirclesArr);
-    cudaEventRecord(stopFill);
-    cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess) {
-        printf("Kernel launch error: %s\n", cudaGetErrorString(err));
-    }
-    cudaCheckError(cudaDeviceSynchronize());
+//     cudaEventRecord(startFill);
+//     kernelFillDatastructure<<<gridDim, blockDim>>>(circleArr);
+//     cudaEventRecord(stopFill);
+//     cudaError_t err = cudaGetLastError();
+//     if (err != cudaSuccess) {
+//         printf("Kernel launch error: %s\n", cudaGetErrorString(err));
+//     }
+//     cudaCheckError(cudaDeviceSynchronize());
 
-    float millisecondsFill = 0;
-    cudaEventElapsedTime(&millisecondsFill, startFill, stopFill);
-    printf("Time for kernelFillDatastructure: %.2f ms\n", millisecondsFill);
+//     float millisecondsFill = 0;
+//     cudaEventElapsedTime(&millisecondsFill, startFill, stopFill);
+//     printf("Time for kernelFillDatastructure: %.2f ms\n", millisecondsFill);
 
-    // Execute pixels 
-    cudaEventRecord(startRender);
-    kernelRenderPixels<<<1024,1024>>>(circleArr, numCirclesArr);
-    cudaEventRecord(stopRender);
-    cudaCheckError(cudaDeviceSynchronize());
+//     // Execute pixels 
+//     cudaEventRecord(startRender);
+//     kernelRenderPixels<<<1024,1024>>>(circleArr, numCirclesArr);
+//     cudaEventRecord(stopRender);
+//     cudaCheckError(cudaDeviceSynchronize());
 
-    // Calculate the elapsed time for kernelRenderPixels
-    float millisecondsRender = 0;
-    cudaEventElapsedTime(&millisecondsRender, startRender, stopRender);
-    printf("Time for kernelRenderPixels: %.2f ms\n", millisecondsRender);
+//     // Calculate the elapsed time for kernelRenderPixels
+//     float millisecondsRender = 0;
+//     cudaEventElapsedTime(&millisecondsRender, startRender, stopRender);
+//     printf("Time for kernelRenderPixels: %.2f ms\n", millisecondsRender);
 
-    // Cleanup
-    cudaEventDestroy(startFill);
-    cudaEventDestroy(stopFill);
-    cudaEventDestroy(startRender);
-    cudaEventDestroy(stopRender);
-    cudaFree(numCirclesArr);
-    cudaFree(circleArr);
-}
+//     // Cleanup
+//     cudaEventDestroy(startFill);
+//     cudaEventDestroy(stopFill);
+//     cudaEventDestroy(startRender);
+//     cudaEventDestroy(stopRender);
+//     cudaFree(circleArr);
+// }
 
 
 void
 CudaRenderer::render() {
 
     // // 256 threads per block is a healthy number
-    // dim3 blockDim(1024, 1);
-    // // dim3 gridDim((1024 + blockDim.x - 1) / blockDim.x);
-    // dim3 gridDim(14, 1);
+    dim3 blockDim(BLOCK_SIDE, BLOCK_SIDE);
+    dim3 gridDim(((1024+BLOCK_SIDE-1)/BLOCK_SIDE),((1024+BLOCK_SIDE-1)/BLOCK_SIDE));
 
-    // int blocks = 40;
-    // int threads_per_block = 1024;
+    // printf("Launched blockDim = (%d,%d), gridDim = (%d,%d)",blockDim.x, blockDim.y, gridDim.x, gridDim.y);
 
-    // printf("Num blocks = %d, num threads per block = %d \n", gridDim.x, blockDim.x);
-    // // printf("Num blocks = %d, num threads = %d \n", gridDim.x, blockDim.x);
-    // // kernelRenderCircles<<<gridDim, blockDim>>>();
-    // kernelRenderPixels<<<1024, 1024>>>();
-
-    // break grid into cells of 27 pixels
-
-    // Allocate memory
-
-
-
-    func(numCircles);
-
+    FusedKernel<<<gridDim,blockDim>>>();
+    cudaDeviceSynchronize();
 }
