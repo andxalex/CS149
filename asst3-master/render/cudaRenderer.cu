@@ -678,18 +678,15 @@ __global__ void FusedKernel(){
     // Loop over circles. Each thread is assigned a specific circle id
     // and evaluates whether the particular circle intersects its cell.
     // The image is processed in BLOCK_SIDE x BLOCK_SIDE chunks:
+    float4 Color =  *(float4*)(&cuConstRendererParams.imageData[4 * (pixel_x + pixel_y*imageWidth)]); 
     for (int i=0; i<cuConstRendererParams.numCircles; i+=BLOCK_SIZE){
         // add threadId to i -> each thread evaluates a different circle
         int index = i + threadId;
 
         // if index is not a valid circle, go to colouring stage
-        if (index>cuConstRendererParams.numCircles){
+        if (index>cuConstRendererParams.numCircles)
             prefixSumInput[threadId] = 0;
-            goto SKIP_INTERSECT_CHECK;
-        }
-
-        // printf("Thread %d points at circle %d \n", threadId, index);
-        {
+        else {
             // read position and radius
             float3 p = *(float3*)(&cuConstRendererParams.position[3*index]);
             float  rad = cuConstRendererParams.radius[index];
@@ -697,21 +694,10 @@ __global__ void FusedKernel(){
             // Intersecting circles are marked with "1", others are marked with "0"
             prefixSumInput[threadId] = circleInBox(p.x, p.y, rad, L, R, T, B);
         }
-        SKIP_INTERSECT_CHECK:
-
-        // Sync to ensure that 1024 threads have evaluated 1024 circles
-        __syncthreads();
 
         // Run exclusive sum to get indices and the number of circles that
         // intersect the box (<1024)
         sharedMemExclusiveScan(threadId, prefixSumInput, prefixSumOutput, prefixSumScratch, BLOCK_SIZE);
-
-        __syncthreads();
-
-
-
-        // sync to ensure sum is done
-        // __syncthreads();
 
         // We have the indices now but still need to create a list.
         // !!THREADS ARE STILL POINTING TO CIRCLES!!
@@ -733,7 +719,6 @@ __global__ void FusedKernel(){
         // Get number of circles, need to add last element of prefixSumInput because of exclusivity
         int numIntersectingCircles = prefixSumOutput[BLOCK_SIZE-1] + prefixSumInput[BLOCK_SIZE-1];
 
-        float4 Color =  *(float4*)(&cuConstRendererParams.imageData[4 * (pixel_x + pixel_y*imageWidth)]); 
         for (int j=0; j<numIntersectingCircles;j++){
             // int circleIndex = intersectingCircles[j];
             float3 p = sharedCirclePositions[j];//*(float3*)(&cuConstRendererParams.position[3*circleIndex]);
@@ -783,8 +768,8 @@ __global__ void FusedKernel(){
             // global memory write
             Color = newColor;
         }
-        *(float4*)(&cuConstRendererParams.imageData[4 * (pixel_x + pixel_y*imageWidth)]) = Color;
     }
+    *(float4*)(&cuConstRendererParams.imageData[4 * (pixel_x + pixel_y*imageWidth)]) = Color;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
