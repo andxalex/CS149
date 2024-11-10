@@ -636,7 +636,7 @@ __global__ void FusedKernel(){
     __shared__ uint prefixSumInput[BLOCK_SIZE];
     __shared__ uint prefixSumOutput[BLOCK_SIZE];
     __shared__ uint prefixSumScratch[2 * BLOCK_SIZE];
-    __shared__ uint intersectingCircles[BLOCK_SIZE];
+    // __shared__ uint intersectingCircles[BLOCK_SIZE];
 
     // Keep circle data in shared memory
     __shared__ float3 sharedCirclePositions[BLOCK_SIZE];
@@ -708,18 +708,17 @@ __global__ void FusedKernel(){
 
         __syncthreads();
 
-        // Get number of circles, need to add last element of prefixSumInput because of exclusivity
-        int numIntersectingCircles = prefixSumOutput[BLOCK_SIZE-1] + prefixSumInput[BLOCK_SIZE-1];
+
 
         // sync to ensure sum is done
-        __syncthreads();
+        // __syncthreads();
 
         // We have the indices now but still need to create a list.
         // !!THREADS ARE STILL POINTING TO CIRCLES!!
         // use that to overwrite one of the arrays
         if (prefixSumInput[threadId]){                  // if original circle intersected the box
             int newIndex = prefixSumOutput[threadId];    // get new index from prefix sum
-            intersectingCircles[newIndex] = index;           // overwrite original array using the new index
+            // intersectingCircles[newIndex] = index;           // overwrite original array using the new index
 
             // Load relevant accesses into shared memory to prevent unnecessary globals
             sharedCirclePositions[newIndex] = *(float3*)(&cuConstRendererParams.position[3 * index]);
@@ -730,9 +729,13 @@ __global__ void FusedKernel(){
 
         // sync to ensure intersecting circle list is done
         __syncthreads();
+
+        // Get number of circles, need to add last element of prefixSumInput because of exclusivity
+        int numIntersectingCircles = prefixSumOutput[BLOCK_SIZE-1] + prefixSumInput[BLOCK_SIZE-1];
+
         float4 Color =  *(float4*)(&cuConstRendererParams.imageData[4 * (pixel_x + pixel_y*imageWidth)]); 
         for (int j=0; j<numIntersectingCircles;j++){
-            int circleIndex = intersectingCircles[j];
+            // int circleIndex = intersectingCircles[j];
             float3 p = sharedCirclePositions[j];//*(float3*)(&cuConstRendererParams.position[3*circleIndex]);
             float rad = sharedCircleRadii[j];//cuConstRendererParams.radius[circleIndex];;
 
