@@ -638,9 +638,18 @@ __global__ void FusedKernel(){
     __shared__ uint prefixSumScratch[2 * BLOCK_SIZE];
     __shared__ uint intersectingCircles[BLOCK_SIZE];
 
+    // Keep circle data in shared memory
+    __shared__ float3 sharedCirclePositions[BLOCK_SIZE];
+    __shared__ float sharedCircleRadii[BLOCK_SIZE];
+    __shared__ float3 sharedCircleColour[BLOCK_SIZE];
+    __shared__ SceneName sharedSceneName;
+
     // Get cell id, threadId
     int cellId = blockIdx.x + blockIdx.y * gridDim.x;
     int threadId = threadIdx.x + threadIdx.y * blockDim.x;
+
+    if (threadId == 0)
+        sharedSceneName = cuConstRendererParams.sceneName;
 
     // Each thread is part of a BLOCK_SIDE x BLOCK_SIDE cell
     float L = blockIdx.x * BLOCK_SIDE;  // left side
@@ -711,6 +720,12 @@ __global__ void FusedKernel(){
         if (prefixSumInput[threadId]){                  // if original circle intersected the box
             int newIndex = prefixSumOutput[threadId];    // get new index from prefix sum
             intersectingCircles[newIndex] = index;           // overwrite original array using the new index
+
+            // Load relevant accesses into shared memory to prevent unnecessary globals
+            sharedCirclePositions[newIndex] = *(float3*)(&cuConstRendererParams.position[3 * index]);
+            sharedCircleRadii[newIndex] = cuConstRendererParams.radius[index];
+            sharedCircleColour[newIndex] = *(float3*)&(cuConstRendererParams.color[3 * index]);
+
         }
 
         // sync to ensure intersecting circle list is done
@@ -718,8 +733,8 @@ __global__ void FusedKernel(){
         float4 Color =  *(float4*)(&cuConstRendererParams.imageData[4 * (pixel_x + pixel_y*imageWidth)]); 
         for (int j=0; j<numIntersectingCircles;j++){
             int circleIndex = intersectingCircles[j];
-            float3 p = *(float3*)(&cuConstRendererParams.position[3*circleIndex]);
-            float rad = cuConstRendererParams.radius[circleIndex];;
+            float3 p = sharedCirclePositions[j];//*(float3*)(&cuConstRendererParams.position[3*circleIndex]);
+            float rad = sharedCircleRadii[j];//cuConstRendererParams.radius[circleIndex];;
 
             float diffX = p.x - pixelCenterNorm.x;
             float diffY = p.y - pixelCenterNorm.y;
@@ -733,7 +748,7 @@ __global__ void FusedKernel(){
             float3 rgb;
             float alpha;
 
-            if (cuConstRendererParams.sceneName == SNOWFLAKES || cuConstRendererParams.sceneName == SNOWFLAKES_SINGLE_FRAME) {
+            if (sharedSceneName == SNOWFLAKES || sharedSceneName == SNOWFLAKES_SINGLE_FRAME) {
 
                 const float kCircleMaxAlpha = .5f;
                 const float falloffScale = 4.f;
@@ -747,8 +762,7 @@ __global__ void FusedKernel(){
 
             } else {
                 // simple: each circle has an assigned color
-                int index3 = 3 * circleIndex;
-                rgb = *(float3*)&(cuConstRendererParams.color[index3]);
+                rgb = sharedCircleColour[j];
                 alpha = .5f;
             }
 
