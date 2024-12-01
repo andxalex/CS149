@@ -68,11 +68,24 @@ def fused_conv2d_maxpool(X, W, bias, pool_size=1):
     c_in_pmax = nl.tile_size.pmax
     n_tiles_c_in = in_channels // c_in_pmax
 
+    # Weights are constant for all images, reshape here
+    weights = weights.reshape(filter_height, filter_width, input_channels, output_channels)
+
     # Process the images in batches
     for b in nl.affine_range(batch_size):
-        # TODO: Perform the convolution of X[b] with the weights W and bias b, followed by a maxpool
-        # and store the result in X_out[b]
-        continue
+        # Try explicit first??
+        # Reshape X, W to appropriate dimensions
+        image = X[b].reshape(input_height*input_width, input_channels)
+
+
+        for i in range(filter_height):
+            for j in range(filter_width):
+
+                # Shift input tensor
+                image_shifted = shift()
+
+                # Perform matmul and accumulate
+                output += matmul(image_shifted, weights[i, j, :, :])
 
     return X_out
 
