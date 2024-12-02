@@ -41,6 +41,8 @@ def fused_conv2d_maxpool(X, W, bias, pool_size=1):
     out_channels, in_channels_, filter_height, filter_width = W.shape
     out_channels_ = bias.shape[0]
 
+    print(f"Loaded {batch_size}, ({input_height},{input_width}) images with {in_channels} channels ")
+    print(f"Loaded")
     assert (
         in_channels_ == in_channels and out_channels_ == out_channels
     ), f"Shape mismatch. {in_channels}, {in_channels_}, {out_channels}, {out_channels_}"
@@ -64,28 +66,47 @@ def fused_conv2d_maxpool(X, W, bias, pool_size=1):
         buffer=nl.hbm,
     )
 
+    # Initialize input image tile
+    X_tile = nl.ndarray(
+        shape=(in_channels, input_height,input_width),
+        dtype=X.dtype,
+        buffer=nl.sbuf
+    )
+
+    W_tile = nl.ndarray(
+        shape=(out_channels_, in_channels_, filter_height, filter_width),
+        dtype = W.dtype,
+        buffer=nl.sbuf
+    )
+
     # Various tiling dimensions (You may want to define more of them)
     c_in_pmax = nl.tile_size.pmax
     n_tiles_c_in = in_channels // c_in_pmax
 
     # Weights are constant for all images, reshape here
-    weights = weights.reshape(filter_height, filter_width, input_channels, output_channels)
+    # X = X.reshape((batch_size, in_channels, input_height,input_width))
 
     # Process the images in batches
     for b in nl.affine_range(batch_size):
-        # Try explicit first??
-        # Reshape X, W to appropriate dimensions
-        image = X[b].reshape(input_height*input_width, input_channels)
 
+        # Load tile into X and W
+        X_tile =nl.load(X[b])
+        W_tile =nl.load(W) # this is 128,128,3,3 now, shouldnt it be 128,128?
+
+        # Initialize output with zeros
+        temp = nl.zeros((out_channels, input_height*input_width), W.dtype, nl.psum) # PSUM or sbuf?
 
         for i in range(filter_height):
             for j in range(filter_width):
 
-                # Shift input tensor
-                image_shifted = shift()
+                # Shift input 
+                X_tile = X_tile[:,:,i:,j:]
+
+                # Flatten input
+                X_tile = 
 
                 # Perform matmul and accumulate
-                output += matmul(image_shifted, weights[i, j, :, :])
+                # output += matmul(image_shifted, weights[i, j, :, :])
 
     return X_out
 
