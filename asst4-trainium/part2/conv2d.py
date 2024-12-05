@@ -134,9 +134,9 @@ def fused_conv2d_maxpool(X, W, bias, pool_size=1):
                                     dtype=X.dtype,
                                     buffer=nl.psum)
 
-                for ii in nl.affine_range(filter_height):
+                for ii in range(filter_height):
 
-                    for jj in nl.affine_range(filter_width):
+                    for jj in range(filter_width):
 
                         # print(filter_width)
                         for n in nl.affine_range(n_tiles_c_in):
