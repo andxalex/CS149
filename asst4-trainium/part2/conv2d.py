@@ -226,7 +226,7 @@ def fused_conv2d_maxpool(X, W, bias, pool_size=1):
                     weights_copy[height_i, width_i, out_i, in_i] = nl.transpose(weights_copy[height_i,width_i, out_i, in_i])
 
     # Process the images in batches
-    for b in nl.sequential_range(batch_size):
+    for b in nl.affine_range(batch_size):
 
         # Assign space in sbuf for entire image
         input_ch = chunk_size + filter_height - 1
@@ -238,7 +238,7 @@ def fused_conv2d_maxpool(X, W, bias, pool_size=1):
         # Iterate over chunks first
         for ch in nl.sequential_range(n_chunks):
             # and then over tiles
-            for k in nl.sequential_range(n_tiles_c_in):
+            for k in nl.affine_range(n_tiles_c_in):
 
                 start = ch * input_ch
                 end   = (ch + 1) * input_ch
@@ -249,7 +249,7 @@ def fused_conv2d_maxpool(X, W, bias, pool_size=1):
                 # print(f"Loading chunk {ch}, rows {(ch * input_ch)}:{min(((ch+1) * input_ch), input_height)}")
 
             # Loop over out now
-            for k in nl.sequential_range(n_tiles_c_out):
+            for k in nl.affine_range(n_tiles_c_out):
                 # Assign space to store output in sbuf
                 out = nl.zeros(shape=(nl.par_dim(c_out_pmax), chunk_size, out_width),
                                 dtype=X.dtype,
@@ -258,10 +258,10 @@ def fused_conv2d_maxpool(X, W, bias, pool_size=1):
                 # Iterate over output rows
 
                 # This loop changes to the output chunk size 
-                for j in nl.sequential_range(chunk_size):
+                for j in nl.affine_range(chunk_size):
                     # init row
                     out_row = nl.zeros(shape=(c_out_pmax, out_width),
-                                        dtype=X.dtype,
+                                        dtype=np.float32,
                                         buffer=nl.psum)
 
                     for ii in nl.sequential_range(filter_height):
@@ -278,10 +278,24 @@ def fused_conv2d_maxpool(X, W, bias, pool_size=1):
                     out[:,j,:] = nl.add(out_row, bbias[:,k])
 
 
+                if (pool_size>1):
+                    # Create indices
+                    i_0 = nl.arange(c_out_pmax)[:, None, None, None, None]
+                    i_1 = nl.arange(chunk_size//pool_size)[None, :, None, None, None]
+                    i_2 = nl.arange(pool_size)[None, None, :, None, None]
+                    i_3 = nl.arange(out_pool_width)[None, None, None, :, None]
+                    i_4 = nl.arange(pool_size)[None, None, None, None, :]
 
-                i_par, i_row, i_col = nl.mgrid[0:c_out_pmax, 0:chunk_size, 0:out_width]
-                mask = ((ch*chunk_size) + i_row) < out_height
-                nl.store(X_out[b,(k*c_out_pmax)+i_par,(ch*chunk_size)+i_row,i_col], value=out, mask = mask)             
+                    out = nl.max(
+                        out[i_0, pool_size*i_1 + i_2, pool_size*i_3 + i_4], axis=[2, 4])
+
+                    i_par, i_row, i_col = nl.mgrid[0:c_out_pmax, 0:(chunk_size//pool_size), 0:out_pool_width]
+                    mask = ((ch*chunk_size) + i_row*pool_size) < out_height
+                    nl.store(X_out[b, (k*c_out_pmax)+i_par, (ch * (chunk_size//pool_size))+i_row, i_col], value=out, mask = mask)
+                else:
+                    i_par, i_row, i_col = nl.mgrid[0:c_out_pmax, 0:chunk_size, 0:out_width]
+                    mask = ((ch*chunk_size) + i_row) < out_height
+                    nl.store(X_out[b,(k*c_out_pmax)+i_par,(ch*chunk_size)+i_row,i_col], value=out, mask = mask) 
 
     return X_out
 
