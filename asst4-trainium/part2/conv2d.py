@@ -244,9 +244,9 @@ def fused_conv2d_maxpool(X, W, bias, pool_size=1):
                 end   = (ch + 1) * input_ch
 
                 i_par, i_row, i_col = nl.mgrid[0:c_in_pmax, 0:input_ch, 0: input_width]
-                mask = ((ch * input_ch) + i_row) < input_height
-                image[k] = nl.load(X[b, (c_in_pmax*k) + i_par, (ch * input_ch) + i_row, i_col], mask = mask)
-                print(f"Loading chunk {ch}, rows {(ch * input_ch)}:{min(((ch+1) * input_ch), input_height)}")
+                mask = ((ch * chunk_size) + i_row) < input_height
+                image[k] = nl.load(X[b, (c_in_pmax*k) + i_par, (ch * chunk_size) + i_row, i_col], mask = mask)
+                # print(f"Loading chunk {ch}, rows {(ch * input_ch)}:{min(((ch+1) * input_ch), input_height)}")
 
             # Loop over out now
             for k in nl.sequential_range(n_tiles_c_out):
