@@ -160,7 +160,8 @@ def fused_conv2d_maxpool(X, W, bias, pool_size=1):
     c_out_pmax = nl.tile_size.pmax # 128
     n_tiles_c_in = in_channels // c_in_pmax
     n_tiles_c_out = out_channels // c_out_pmax
-
+    chunk_size = 32
+    n_chunks = (input_height + chunk_size - 1)//chunk_size
 
     
 # - load in the weights into an SBUF array of shape (n_tiles_out_channels, nl.par_dim(c_out_pmax), n_tiles_in_channels, 128, kernel_height, kernel_width)
@@ -176,7 +177,7 @@ def fused_conv2d_maxpool(X, W, bias, pool_size=1):
     )
 
     weights = nl.ndarray(
-        shape=(n_tiles_c_out, nl.par_dim(c_out_pmax), in_channels_, filter_height, filter_width),
+        shape=(n_tiles_c_out, nl.par_dim(c_out_pmax), n_tiles_c_in, c_in_pmax, filter_height, filter_width),
         dtype=W.dtype,
         buffer=nl.sbuf
     )
@@ -192,10 +193,13 @@ def fused_conv2d_maxpool(X, W, bias, pool_size=1):
     print(f"       Image shape is = {X.shape}")
     print(f"           W shape is = {W.shape}")
     print(f"        bias shape is = {bias.shape}")
+    print(f"Number of chunks   is = {n_chunks}")
+
+
     for out_i in nl.sequential_range(n_tiles_c_out):
-        weights[out_i] = nl.load(W[out_i * c_out_pmax:(out_i + 1)*c_out_pmax,:,:,:])
-    weights = weights.reshape((n_tiles_c_out, nl.par_dim(c_out_pmax), n_tiles_c_in, c_in_pmax, filter_height, filter_width))
-    
+        for in_i in nl.sequential_range(n_tiles_c_in):
+            weights[out_i,:, in_i] = nl.load(W[out_i * c_out_pmax:(out_i + 1)*c_out_pmax,in_i * c_in_pmax:(in_i + 1)*c_in_pmax,:,:])
+
     # Need to move dimensions around as such
     for height_i in nl.sequential_range(filter_height):
         for width_i in nl.sequential_range(filter_width):
@@ -221,12 +225,28 @@ def fused_conv2d_maxpool(X, W, bias, pool_size=1):
                         buffer=nl.sbuf,
                         )
 
+        # Define a variable: out_chunk, and initialize to a value that fits in
+        # the free dimension
+
+        # Look at test cases and ensure that it fits it exactly
+
+        # For 50 output rows, with a 2x2 filter we need 51 input rows.
+
+        # # chunks = (output height + out_chunk - 1) / out_chunk
+
+        # print(X[b, (c_in_pmax*k):(c_in_pmax*(k+1)), :,:].shape)
+        # print(image[k].shape)
+
+        # for n in num_chunks:
+
+            # Load inputs for chunk
+
         # Loop over image and assign each tile
         for k in nl.sequential_range(n_tiles_c_in):
             image[k] = nl.load(X[b, (c_in_pmax*k):(c_in_pmax*(k+1)), :,:])
 
-        print(X[b, (c_in_pmax*k):(c_in_pmax*(k+1)), :,:].shape)
-        print(image[k].shape)
+            # ^^ this should load chunk size + filter height - 1
+
         # Loop over out now
         for k in nl.sequential_range(n_tiles_c_out):
             # Assign space to store output in sbuf
@@ -235,6 +255,8 @@ def fused_conv2d_maxpool(X, W, bias, pool_size=1):
                             buffer=nl.sbuf)
 
             # Iterate over output rows
+
+            # This loop changes to the output chunk size 
             for j in nl.sequential_range(out_height):
                 # init row
                 out_row = nl.zeros(shape=(c_out_pmax, out_width),
@@ -251,15 +273,17 @@ def fused_conv2d_maxpool(X, W, bias, pool_size=1):
                                                 y = image[n, :, j + ii, jj:jj + out_width],
                                                 transpose_x =True)
                             out_row[...] = nl.add(out_row,temp)
-                            print(f"Accessing element [{n},{150},{j+ii},{jj}:{jj+out_width}]")
-                            # print(out_row.shape)
-                            print("??")
+                            # print(f"Accessing element [{n},{150},{j+ii},{jj}:{jj+out_width}]")
+                            # # print(out_row.shape)
+                            # print("??")
 
                 # Write output to sbuf 
                 out[:,j,:] = out_row
+                #vector add bias?
                 # print(out.shape)
 
         # Write output to hbm
+            # Need to figure out the correct indexes to store in.
             nl.store(X_out[b,k*c_out_pmax:(k+1)*c_out_pmax,:,:], value=out)
         # print(f"Output shape is {X_out.shape}")
         # print(X_out.shape)
