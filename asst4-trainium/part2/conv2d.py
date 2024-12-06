@@ -150,8 +150,8 @@ def fused_conv2d_maxpool(X, W, bias, pool_size=1):
     out_channels, in_channels_, filter_height, filter_width = W.shape
     out_channels_ = bias.shape[0]
 
-    print(f"Loaded {batch_size}, ({input_height},{input_width}) images with {in_channels} channels ")
-    print(f"Loaded")
+    # print(f"Loaded {batch_size}, ({input_height},{input_width}) images with {in_channels} channels ")
+    # print(f"Loaded")
     assert (
         in_channels_ == in_channels and out_channels_ == out_channels
     ), f"Shape mismatch. {in_channels}, {in_channels_}, {out_channels}, {out_channels_}"
@@ -195,23 +195,33 @@ def fused_conv2d_maxpool(X, W, bias, pool_size=1):
         buffer=nl.sbuf
     )
 
+    bbias = nl.ndarray(
+        shape = (c_out_pmax, n_tiles_c_out),
+        dtype = bias.dtype,
+        buffer = nl.sbuf
+    )
+
     # Reshape input weight matrix and load in sbuf
-    print(f"Count here X shape is = {X_out.shape}")
-    print(f"       Image shape is = {X.shape}")
-    print(f"           W shape is = {W.shape}")
-    print(f"        bias shape is = {bias.shape}")
-    print(f"Number of chunks   is = {n_chunks}")
+    # print(f"Count here X shape is = {X_out.shape}")
+    # print(f"       Image shape is = {X.shape}")
+    # print(f"           W shape is = {W.shape}")
+    # print(f"        bias shape is = {bias.shape}")
+    # print(f"Number of chunks   is = {n_chunks}")
 
 
-    for out_i in nl.sequential_range(n_tiles_c_out):
-        for in_i in nl.sequential_range(n_tiles_c_in):
+    # Load weights and unroll
+    for out_i in nl.affine_range(n_tiles_c_out):
+        bbias[:,out_i] = nl.load(bias[out_i*c_out_pmax:(out_i+1)*c_out_pmax])
+        for in_i in nl.affine_range(n_tiles_c_in):
             weights[out_i,:, in_i] = nl.load(W[out_i * c_out_pmax:(out_i + 1)*c_out_pmax,in_i * c_in_pmax:(in_i + 1)*c_in_pmax,:,:])
+    # bbias = nl.transpose(bbias)
+    # print(bbias.shape)
 
     # Need to move dimensions around as such
-    for height_i in nl.sequential_range(filter_height):
-        for width_i in nl.sequential_range(filter_width):
-            for out_i in nl.sequential_range(n_tiles_c_out):
-                for in_i in nl.sequential_range(n_tiles_c_in):
+    for height_i in nl.affine_range(filter_height):
+        for width_i in nl.affine_range(filter_width):
+            for out_i in nl.affine_range(n_tiles_c_out):
+                for in_i in nl.affine_range(n_tiles_c_in):
                     weights_copy[height_i, width_i, out_i, in_i, :, :] = nl.copy(weights[out_i, :, in_i, :, height_i, width_i])
                     weights_copy[height_i, width_i, out_i, in_i] = nl.transpose(weights_copy[height_i,width_i, out_i, in_i])
 
@@ -225,19 +235,9 @@ def fused_conv2d_maxpool(X, W, bias, pool_size=1):
                         buffer=nl.sbuf,
                         )
 
-        # Define a variable: out_chunk, and initialize to a value that fits in
-        # the free dimension
-
-        # Look at test cases and ensure that it fits it exactly
-
-        # For 50 output rows, with a 2x2 filter we need 51 input rows.
-
-        # # chunks = (output height + out_chunk - 1) / out_chunk
-
-        # print(X[b, (c_in_pmax*k):(c_in_pmax*(k+1)), :,:].shape)
-        # print(image[k].shape)
-
+        # Iterate over chunks first
         for ch in nl.sequential_range(n_chunks):
+            # and then over tiles
             for k in nl.sequential_range(n_tiles_c_in):
 
                 start = ch * input_ch
@@ -274,28 +274,14 @@ def fused_conv2d_maxpool(X, W, bias, pool_size=1):
                                                     y = image[n, :, j + ii, jj:jj + out_width],
                                                     transpose_x =True)
                                 out_row[...] = nl.add(out_row,temp)
-                                # print(f"Accessing element [{n},{150},{j+ii},{jj}:{jj+out_width}]")
-                                # # print(out_row.shape)
-                                # print("??")
 
-                    # Write output to sbuf 
-                    out[:,j,:] = out_row
-                    #vector add bias?
-                    # print(out.shape)
+                    out[:,j,:] = nl.add(out_row, bbias[:,k])
 
-            # Write output to hbm
-                # Need to figure out the correct indexes to store in.
+
 
                 i_par, i_row, i_col = nl.mgrid[0:c_out_pmax, 0:chunk_size, 0:out_width]
-                print("stored once")
                 mask = ((ch*chunk_size) + i_row) < out_height
-                print(out_pool_height)
-                # nl.store(X_out[b,k*c_out_pmax:(k+1)*c_out_pmax,ch*chunk_size:(ch+1)*chunk_size,:], value=out)
-                nl.device_print("storing chunk", x = ch)
-                nl.device_print("   start row = ",x = (ch * chunk_size))
-                nl.device_print("   MIN? end   row = ",x =((ch+1) * chunk_size))
                 nl.store(X_out[b,(k*c_out_pmax)+i_par,(ch*chunk_size)+i_row,i_col], value=out, mask = mask)             
-            # print(f"Output shape is {X_out.shape}")
-            # print(X_out.shape)
+
     return X_out
 
