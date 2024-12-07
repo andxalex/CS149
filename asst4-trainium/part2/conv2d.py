@@ -33,116 +33,6 @@ out_pool_width = out_width // pool_size
 The shape of the output should be [batch_size, out_channels, out_pool_height, out_pool_width]
 
 """
-def fused_conv2d_maxpool(X,W,bias,pool_size = 1):
-    batch_size, in_channels, input_height, input_width = X.shape
-    out_channels, in_channels_, filter_height, filter_width = W.shape
-    out_channels_ = bias.shape[0]
-
-
-    
-    print(f"Loaded {batch_size}, ({input_height},{input_width}) images with {in_channels} channels ")
-    print(f"Loaded")
-    assert (
-        in_channels_ == in_channels and out_channels_ == out_channels
-    ), f"Shape mismatch. {in_channels}, {in_channels_}, {out_channels}, {out_channels_}"
-
-    out_height = input_height - filter_height + 1
-    out_width = input_width - filter_width + 1
-
-    out_pool_height = out_height // pool_size
-    out_pool_width = out_width // pool_size
-    chunk_size = 32
-    n_chunks = (input_height + chunk_size - 1)//chunk_size
-    print(input_height)
-    # Various tiling dimensions (You may want to define more of them)
-    c_in_pmax = 128 # 128
-    c_out_pmax = 128 # 128
-    n_tiles_c_in = in_channels // c_in_pmax
-    n_tiles_c_out = out_channels // c_out_pmax
-
-    X_out = np.zeros(shape = (batch_size, out_channels, out_pool_height, out_pool_width))
-    weights = np.zeros(shape = (n_tiles_c_out, c_out_pmax, in_channels_, filter_height, filter_width))
-    weights_copy = np.zeros(shape=(filter_height, filter_width, n_tiles_c_out, n_tiles_c_in, c_out_pmax, c_in_pmax))
-
-    print(f"Count here X shape is = {X_out.shape}")
-    print(f"       Image shape is = {X.shape}")
-    print(f"           W shape is = {W.shape}")
-    print(f"        bias shape is = {bias.shape}")
-
-    for out_i in range(n_tiles_c_out):
-        weights[out_i] = W[(out_i * c_out_pmax):(out_i + 1)*c_out_pmax,:,:,:]
-    weights= weights.reshape((n_tiles_c_out, c_out_pmax, n_tiles_c_in, c_in_pmax, filter_height, filter_width))
-
-    # Move
-    for height_i in range(filter_height):
-        for width_i in range(filter_width):
-            for out_i in range(n_tiles_c_out):
-                for in_i in range(n_tiles_c_in):
-                    weights_copy[height_i, width_i, out_i, in_i, :, :] = weights[out_i, :, in_i, :, height_i, width_i]
-                    weights_copy[height_i, width_i, out_i, in_i] = np.transpose(weights_copy[height_i, width_i, out_i, in_i])
-
-    print(f"W shape after is        {weights_copy.shape}")
-    print(f"Out height is {out_height}")
-    for b in range(batch_size):
-
-        # Assign space in sbuf for entire image
-        input_ch = chunk_size + filter_height - 1
-
-        for ch in range(n_chunks):
-            # Loop over image and assign each tile
-            start = ch * input_ch
-            end   = min(((ch+1) * input_ch), input_height)
-            image = np.zeros(shape=(n_tiles_c_in, c_in_pmax, end-start, input_width))
-
-            print(f"Number of chunks is {n_chunks}")
-            for k in range(n_tiles_c_in):
-                print(f"start = {start}, end = {end}")
-                image[k] = X[b, (c_in_pmax*k):(c_in_pmax*(k+1)), start:end,:]
-
-            print(X[b, (c_in_pmax*k):(c_in_pmax*(k+1)), :,:].shape)
-            print(image[k].shape)
-            # Loop over out now
-            for k in range(n_tiles_c_out):
-                # Assign space to store output in sbuf
-                out = np.zeros(shape=(c_out_pmax, min(chunk_size,out_height), out_width))
-                print(out.shape)
-                # Iterate over output rows
-                for j in range(min(end-start-3-1,out_height)):
-                    print(f"j = {min(end-start-3 - 1,out_height)}")
-                    # init row
-                    out_row = np.zeros(shape=(c_out_pmax, out_width))
-                    # print(f"Out row shape is {out_row.shape}")
-                    for ii in range(filter_height):
-
-                        for jj in range(filter_width):
-
-                            # print(filter_width)
-                            for n in range(n_tiles_c_in):
-                                # print(f"Shape of weights {weights_copy[ii, jj, k, n, :, :].shape}")
-                                # print(f"Shape of inage {image[n, :, j + ii, jj:jj + out_width].shape}")
-                                print(f"j = {j}, ii = {ii}, j+ii = {j+ii}")
-                                temp =  weights_copy[ii, jj, k, n, :, :].T @ image[n, :, j + ii, jj:jj + out_width]
-                                out_row += temp
-                                # print(out_row.shape)
-                                # print(f"Accessing element [{n},{150},{j+ii},{jj}:{jj+out_width}]")
-                                # print(out_row.shape)
-                                # print("??")
-
-                    # Write output to sbuf 
-                    out[:,j,:] = out_row
-                    
-
-
-            # Write output to hbm
-                print(f"X out shape is {X_out.shape}")
-                start = ch*chunk_size
-                end = min((ch+1)*chunk_size,out_height)
-                X_out[b,k*c_out_pmax:(k+1)*c_out_pmax,start:end,:] = out
-            # nl.store(X_out[b,:,:,:], value=out)
-            # print(f"Output shape is {X_out.shape}")
-            # print(X_out.shape)
-    return X_out
-
 @nki.jit
 def fused_conv2d_maxpool(X, W, bias, pool_size=1):
 
@@ -173,7 +63,7 @@ def fused_conv2d_maxpool(X, W, bias, pool_size=1):
     c_out_pmax = nl.tile_size.pmax # 128
     n_tiles_c_in = in_channels // c_in_pmax
     n_tiles_c_out = out_channels // c_out_pmax
-    chunk_size = 32
+    chunk_size = 16
     n_chunks = (input_height + chunk_size - 1)//chunk_size
 
     # Initialize output array
@@ -230,13 +120,13 @@ def fused_conv2d_maxpool(X, W, bias, pool_size=1):
 
         # Assign space in sbuf for entire image
         input_ch = chunk_size + filter_height - 1
-        image = nl.ndarray(shape=(n_tiles_c_in, nl.par_dim(c_in_pmax), input_ch, input_width), 
+        image = nl.ndarray(shape=(n_chunks,n_tiles_c_in, nl.par_dim(c_in_pmax), input_ch, input_width), 
                         dtype=X.dtype, 
                         buffer=nl.sbuf,
                         )
 
         # Iterate over chunks first
-        for ch in nl.sequential_range(n_chunks):
+        for ch in nl.affine_range(n_chunks):
             # and then over tiles
             for k in nl.affine_range(n_tiles_c_in):
 
@@ -245,7 +135,7 @@ def fused_conv2d_maxpool(X, W, bias, pool_size=1):
 
                 i_par, i_row, i_col = nl.mgrid[0:c_in_pmax, 0:input_ch, 0: input_width]
                 mask = ((ch * chunk_size) + i_row) < input_height
-                image[k] = nl.load(X[b, (c_in_pmax*k) + i_par, (ch * chunk_size) + i_row, i_col], mask = mask)
+                image[ch, k, ] = nl.load(X[b, (c_in_pmax*k) + i_par, (ch * chunk_size) + i_row, i_col], mask = mask)
                 # print(f"Loading chunk {ch}, rows {(ch * input_ch)}:{min(((ch+1) * input_ch), input_height)}")
 
             # Loop over out now
@@ -264,16 +154,16 @@ def fused_conv2d_maxpool(X, W, bias, pool_size=1):
                                         dtype=np.float32,
                                         buffer=nl.psum)
 
-                    for ii in nl.sequential_range(filter_height):
+                    for ii in nl.affine_range(filter_height):
 
-                        for jj in nl.sequential_range(filter_width):
+                        for jj in nl.affine_range(filter_width):
 
                             # print(filter_width)
-                            for n in nl.sequential_range(n_tiles_c_in):
-                                temp = nl.matmul(x = weights_copy[ii, jj, k, n, :, :],
-                                                    y = image[n, :, j + ii, jj:jj + out_width],
+                            for n in nl.affine_range(n_tiles_c_in):
+                                out_row += nl.matmul(x = weights_copy[ii, jj, k, n, :, :],
+                                                    y = image[ch, n, :, j + ii, jj:jj + out_width],
                                                     transpose_x =True)
-                                out_row[...] = nl.add(out_row,temp)
+                                 
 
                     out[:,j,:] = nl.add(out_row, bbias[:,k])
 
